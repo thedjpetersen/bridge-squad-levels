@@ -504,6 +504,11 @@ out.mkdir(parents=True, exist_ok=True)
 (out / "index.html").write_text(src)
 print("wrote", out / "index.html", f"({len(PATCHES)} patches)")
 
+# the same patches as data, for web/index.html, which patches the original game in the browser
+import json
+(out / "patches.json").write_text(json.dumps(PATCHES))
+print("wrote", out / "patches.json")
+
 # syntax-check the patched game script when Node is available
 import re, shutil, subprocess, tempfile
 if shutil.which("node"):

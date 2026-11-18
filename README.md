@@ -1,5 +1,9 @@
 # Bridge Squad: levels kit
 
+![Bridge Squad: Endless cover art](docs/cover.svg)
+
+**Play it:** https://thedjpetersen.com/games/bridge-squad/
+
 This kit turns [Bridge Squad](https://noclipepe.pages.dev/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**. It also adds **weapons**, **gate types** and **enemy types**.
 
 ![Eight themes: dusk, day, sunset, neon, toxic, frost, desert, storm](docs/themes.png)
@@ -22,6 +26,12 @@ python3 -m http.server 8731     # then open http://127.0.0.1:8731/?level=1
 | **Enemies** | `grunt`, `brute` (big and tanky; survives several melee trades), `runner` (fast, aggros early), `bomber` (explodes when killed and takes extra soldiers with it in melee; chain reactions!). |
 | **Themes** | Eight original looks for sky, water, deck and lighting: dusk (stock), day, sunset, neon, toxic, frost, desert and storm. Each archetype has a default, and any level can set `theme:`. |
 | **Hazards** | **Saw blades** sweep across the belt or the deck at a fixed point. **Explosive barrels** sit in the horde: shoot one to blast everything around it. |
+
+## Putting it on a website
+
+`web/index.html` is a page that fetches the original game from noclipepe's site, applies `patches.json` in the browser and runs it. The original is never rehosted. If the original changes so the patches no longer fit, the page says so and links to it.
+
+To deploy, run `./setup.sh` (which also writes `patches.json`). Then put `web/index.html` in a folder together with `patches.json`, `levels.js`, and `docs/cover.svg` and `docs/cover.jpg` (renamed to `cover.svg` and `cover.jpg`). `art/cover.py` regenerates the cover art.
 
 ## How the original works
 
