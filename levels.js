@@ -13,7 +13,7 @@ window.BRIDGE_LEVELS = [
     stars: [150, 300],
   },
   { // introduces the x2 gate, a spread-gun gate and runners
-    name: 'STAGE 2',
+    name: 'STAGE 2', theme: 'day',
     gates: [
       { t: 2.0, every: 0.45, count: 20, val: 2 },
       { t: 11.0, op: 'x', val: 2 },
@@ -33,7 +33,7 @@ window.BRIDGE_LEVELS = [
     stars: [180, 320],
   },
   { // red trap gates to dodge, brutes, and rockets from the cage
-    name: 'STAGE 3',
+    name: 'STAGE 3', theme: 'sunset',
     gates: [
       { t: 1.5, every: 0.35, count: 18, val: 1 },
       { t: 7.9, op: '-', val: 6 },
@@ -57,5 +57,84 @@ window.BRIDGE_LEVELS = [
     ],
     final: { hp: 14000, cap: 48, wakeAt: 34 },
     stars: [220, 400],
+  },
+  { // saw blades sweep the belt and the deck; a shield gate gets you through, a tesla gate chains through runners
+    name: 'STAGE 4', theme: 'neon',
+    gates: [
+      { t: 1.8, every: 0.4, count: 16, val: 1 },
+      { t: 8.4, buff: 'shield', secs: 5 },
+      { t: 8.8, every: 0.4, count: 8, val: 2 },
+      { t: 12.4, op: 'x', val: 2 },
+      { t: 12.8, every: 0.4, count: 8, val: 2 },
+      { t: 16.4, weapon: 'shock' },
+      { t: 16.8, every: 0.4, count: 8, val: 2 },
+      { t: 23.0, every: 1.1, count: 3, val: 99 },
+    ],
+    horde: [
+      { x0: -6.05, x1: 2.85, d0: 17.5, d1: 30, gap: 0.62, type: 'grunt' },
+      { x0: -6.05, x1: 2.85, d0: 30.6, d1: 46, gap: 0.62, type: 'runner' },
+      { x0: -6.05, x1: 2.85, d0: 46.6, d1: 62.6, gap: 0.62, type: 'grunt' },
+    ],
+    cage: { x: -4.4, d: 15.0, hp: 40, weapon: 'laser' },
+    hazards: [
+      { type: 'saw', d: 11.0, x0: 1.5, x1: 6.2, speed: 1.6 },
+      { type: 'saw', d: 22.0, x0: -6.0, x1: 0.5, speed: 2.0, phase: 1.5 },
+    ],
+    bosses: [{ kind: 0, at: 12.0, ahead: 24 }, { kind: 1, at: 20.0, ahead: 26, hp: 1400 }],
+    final: { hp: 10000, wakeAt: 31 },
+    stars: [160, 300],
+  },
+  { // explosive barrels in a horde of green bombers: one good shot sets off a chain reaction. Flamer from the cage
+    name: 'STAGE 5', theme: 'toxic',
+    gates: [
+      { t: 1.8, every: 0.4, count: 22, val: 1 },
+      { t: 10.8, op: 'x', val: 2 },
+      { t: 11.2, every: 0.4, count: 16, val: 1 },
+      { t: 18.0, op: '-', val: 10 },
+      { t: 18.4, every: 0.4, count: 8, val: 1 },
+      { t: 21.5, weapon: 'rocket' },
+      { t: 22.0, buff: 'frenzy', secs: 7 },
+      { t: 23.0, every: 1.0, count: 3, val: 99 },
+    ],
+    horde: [
+      { x0: -6.05, x1: 2.85, d0: 17.5, d1: 28, gap: 0.62, type: 'grunt' },
+      { x0: -6.05, x1: 2.85, d0: 28.6, d1: 46, gap: 0.62, type: 'bomber' },
+      { x0: -6.05, x1: 2.85, d0: 46.6, d1: 62.6, gap: 0.62, type: 'grunt' },
+    ],
+    cage: { x: -4.6, d: 15.5, hp: 35, weapon: 'flame' },
+    hazards: [
+      { type: 'barrel', x: -2.0, d: 21.0 }, { type: 'barrel', x: 1.4, d: 25.0 }, { type: 'barrel', x: -4.6, d: 30.0 },
+      { type: 'barrel', x: -0.8, d: 35.0 }, { type: 'barrel', x: 1.8, d: 41.0 }, { type: 'barrel', x: -3.2, d: 49.0 },
+    ],
+    bosses: [{ kind: 0, at: 11.0, ahead: 24 }, { kind: 1, at: 19.0, ahead: 26, hp: 1500 }],
+    final: { hp: 10000, wakeAt: 30 },
+    stars: [170, 320],
+  },
+  { // frost and a boss rush: freeze slows the horde and bosses, then swap to the railgun; watch the ÷2 gate
+    name: 'STAGE 6', theme: 'frost',
+    gates: [
+      { t: 1.8, every: 0.38, count: 20, val: 1 },
+      { t: 9.4, op: 'x', val: 2 },
+      { t: 9.8, every: 0.38, count: 10, val: 2 },
+      { t: 13.8, op: '/', val: 2 },
+      { t: 14.2, every: 0.38, count: 10, val: 2 },
+      { t: 18.2, buff: 'shield', secs: 6 },
+      { t: 18.6, weapon: 'rail' },
+      { t: 19.0, every: 0.38, count: 6, val: 2 },
+      { t: 23.5, every: 1.0, count: 4, val: 50 },
+    ],
+    horde: [
+      { x0: -6.05, x1: 2.85, d0: 17.5, d1: 36, gap: 0.75, type: 'grunt' },
+      { x0: -6.05, x1: 2.85, d0: 36.6, d1: 62.6, gap: 0.95, type: 'brute', hp: 5 },
+    ],
+    cage: { x: -4.6, d: 14.5, hp: 35, weapon: 'freeze' },
+    bosses: [
+      { kind: 0, at: 9.0, ahead: 24, hp: 600 },
+      { kind: 1, at: 13.0, ahead: 26, hp: 1300 },
+      { kind: 0, at: 18.0, ahead: 24, hp: 900, cap: 7 },
+      { kind: 1, at: 23.0, ahead: 26, hp: 1600 },
+    ],
+    final: { hp: 10000, wakeAt: 31 },
+    stars: [150, 280],
   },
 ];

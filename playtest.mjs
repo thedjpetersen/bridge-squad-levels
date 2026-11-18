@@ -17,8 +17,10 @@ const BOT = () => new Promise(done => {
     const s = G.s, lv = window.__bridgeLevel(s.level + 1);
     if (s.state !== 'play') return done({ level: s.level + 1, name: s.name, result: s.state, t: +s.t.toFixed(1), squad: s.N, weapon: s.weapon, finalHp: lv.final.hp, stars: lv.stars, hero: s.hero, kills: s.kills, log });
     let tx, why;
-    const trap = s.gates.find(g => g.kind === '-' && g.d > s.D - 1 && g.d < s.D + s.hd + 9);
+    const trap = s.gates.find(g => (g.kind === '-' || g.kind === '/') && g.d > s.D - 1 && g.d < s.D + s.hd + 9);
+    const saw = s.hazards.find(h => h.type === 'saw' && h.d > s.D - s.hd - 1 && h.d < s.D + s.hd + 3);
     if (trap) { tx = -2; why = 'dodge'; }
+    else if (saw && s.shieldT <= 0) { tx = (saw.x0 + saw.x1) / 2 > 0 ? -4.5 : 4.5; why = 'saw'; }
     else if (s.crate.state === 'idle' || s.crate.state === 'arc') { tx = s.crate.x; why = 'crate'; }
     else if (!s.cageOpen && s.N >= 6 && s.D + 19 > lv.cage.d - 1.75) { tx = lv.cage.x + 0.3; why = 'cage'; }
     else if (s.gates.length) { tx = 6; why = 'gates'; }

@@ -3,13 +3,14 @@
 
 Usage:  python3 build.py path/to/original/bridge.html  [out_dir]
 
-Adds: levels from levels.js, a seeded generator for every level past the hand-made ones,
-weapons (rifle, laser, rapid, spread, rocket, rail), gate types (+N, xN, -N, weapon) and
-enemy types (grunt, brute, runner).
+Adds: levels from levels.js and a seeded generator (with level archetypes) for every level
+past the hand-made ones; weapons (rifle, laser, rapid, spread, rocket, rail, flamer, tesla,
+freeze); gates (+N, xN, -N, /N, weapon, frenzy, shield); enemies (grunt, brute, runner,
+bomber); hazards (saw blades, explosive barrels).
 
-Every patch is an exact string replacement that must match the expected number of
-times, so if the original game changes the build fails loudly instead of producing a
-half-patched game.
+Every patch is an exact string replacement that must match the expected number of times,
+so if the original game changes the build fails loudly instead of producing a half-patched
+game.
 """
 import pathlib, sys
 
@@ -20,31 +21,39 @@ RUNTIME = r"""
 // ================================================================== level kit (patched in by build.py)
 // ---- weapons. type = projectile type; int = seconds between shots per soldier; shots/fan = spread pattern
 const WEAPONS = {
-  rifle:  { type: 0, int: 0.34, shots: 1, fan: 0,    label: 'RIFLE',     ring: 0xffd060 },
-  laser:  { type: 1, int: 0.34, shots: 1, fan: 0,    label: 'ATK+150%',  ring: 0xff66e0 },
-  rapid:  { type: 4, int: 0.15, shots: 1, fan: 0,    label: 'RAPID FIRE', ring: 0xb8ff40 },
-  spread: { type: 5, int: 0.40, shots: 3, fan: 0.2,  label: 'SPREAD',    ring: 0x40e0ff },
-  rocket: { type: 6, int: 0.60, shots: 1, fan: 0,    label: 'ROCKETS',   ring: 0xff8a20 },
-  rail:   { type: 7, int: 0.80, shots: 1, fan: 0,    label: 'RAILGUN',   ring: 0xa0c8ff },
+  rifle:  { type: 0,  int: 0.34, shots: 1, fan: 0,    label: 'RIFLE',      ring: 0xffd060, dps: 2.9 },
+  laser:  { type: 1,  int: 0.34, shots: 1, fan: 0,    label: 'ATK+150%',   ring: 0xff66e0, dps: 7.35 },
+  rapid:  { type: 4,  int: 0.15, shots: 1, fan: 0,    label: 'RAPID FIRE', ring: 0xb8ff40, dps: 8 },
+  spread: { type: 5,  int: 0.40, shots: 3, fan: 0.2,  label: 'SPREAD',     ring: 0x40e0ff, dps: 7.5 },
+  rocket: { type: 6,  int: 0.60, shots: 1, fan: 0,    label: 'ROCKETS',    ring: 0xff8a20, dps: 8.3 },
+  rail:   { type: 7,  int: 0.80, shots: 1, fan: 0,    label: 'RAILGUN',    ring: 0xa0c8ff, dps: 8.75 },
+  flame:  { type: 8,  int: 0.30, shots: 2, fan: 0.18, label: 'FLAMER',     ring: 0xff6010, dps: 4.5 },
+  shock:  { type: 9,  int: 0.40, shots: 1, fan: 0,    label: 'TESLA',      ring: 0xa070ff, dps: 7 },
+  freeze: { type: 10, int: 0.34, shots: 1, fan: 0,    label: 'FREEZE',     ring: 0x90f0ff, dps: 4.7 },
 };
-// per projectile type: 0 rifle, 1 laser, 2 hero, 3 hero+ATK, 4 rapid, 5 spread, 6 rocket, 7 rail
-const PDMG = [1, 2.5, 5, 12.5, 1.2, 1.0, 5, 7];
-const PHW = [0.42, 0.42, 0.55, 0.55, 0.4, 0.42, 0.6, 0.5];   // hit half-width
-const PSPL = [0, 0, 0, 0, 0, 0, 1.6, 0];                    // splash radius (rockets)
-let W = WEAPONS.rifle, wName = 'rifle';
+// per projectile type: 0 rifle, 1 laser, 2 hero, 3 hero+ATK, 4 rapid, 5 spread, 6 rocket, 7 rail, 8 flame, 9 shock, 10 freeze
+const PDMG = [1, 2.5, 5, 12.5, 1.2, 1.0, 5, 7, 1.2, 2.8, 1.6];
+const PHW = [0.42, 0.42, 0.55, 0.55, 0.4, 0.42, 0.6, 0.5, 0.7, 0.42, 0.45];   // hit half-width
+const PSPL = [0, 0, 0, 0, 0, 0, 1.6, 0, 0, 0, 0];                          // splash radius (rockets)
+const PFX = [0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2];                              // 1 chain lightning, 2 freeze, 3 flame (pierces without losing damage)
+let W = WEAPONS.rifle, wName = 'rifle', frenzyT = 0, shieldT = 0, shieldFx = 0;
 
-// ---- enemy types: 0 grunt, 1 brute (tanky; survives several melee trades), 2 runner (fast, aggros early)
-const ETYPE = { grunt: 0, brute: 1, runner: 2 };
-const EHP = [1, 5, 1], ESPD = [1, 1, 1.75], EAGG = [0, 0, 5], ESCL = [1, 1.42, 0.86];
-const ECOL = [[1, 1, 1], [0.6, 0.48, 0.78], [1.4, 1.15, 0.45]];
+// ---- enemy types: 0 grunt, 1 brute (tanky; survives several melee trades), 2 runner (fast, aggros early),
+//      3 bomber (explodes when killed, hurting nearby enemies; takes extra soldiers with it in melee)
+const ETYPE = { grunt: 0, brute: 1, runner: 2, bomber: 3 };
+const EHP = [1, 5, 1, 1], ESPD = [1, 1, 1.75, 1.2], EAGG = [0, 0, 3, 2], ESCL = [1, 1.42, 0.86, 0.96];
+const ECOL = [[1, 1, 1], [0.6, 0.48, 0.78], [1.4, 1.15, 0.45], [0.42, 1.45, 0.32]], ICE = [0.45, 0.95, 2.4];
 
 // ---- gate styles
 const GATE_STYLE = {
-  add:  { glass: [0.03, 0.2, 0.95], glow: [0.05, 0.3, 1.0], edge: '#0b41c4' },
-  big:  { glass: [1.0, 0.5, 0.02],  glow: [1.0, 0.5, 0.04], edge: '#b05a00' },
-  x:    { glass: [0.55, 0.08, 0.95], glow: [0.6, 0.1, 1.0], edge: '#5a0ca8' },
-  '-':  { glass: [0.95, 0.04, 0.05], glow: [1.0, 0.08, 0.05], edge: '#8a0010' },
-  w:    { glass: [0.02, 0.8, 0.45],  glow: [0.05, 1.0, 0.5],  edge: '#04664a' },
+  add: { glass: [0.03, 0.2, 0.95], glow: [0.05, 0.3, 1.0], edge: '#0b41c4' },
+  big: { glass: [1.0, 0.5, 0.02],  glow: [1.0, 0.5, 0.04], edge: '#b05a00' },
+  x:   { glass: [0.55, 0.08, 0.95], glow: [0.6, 0.1, 1.0], edge: '#5a0ca8' },
+  '-': { glass: [0.95, 0.04, 0.05], glow: [1.0, 0.08, 0.05], edge: '#8a0010' },
+  '/': { glass: [0.45, 0.0, 0.12],  glow: [0.7, 0.0, 0.2],  edge: '#40001a' },
+  w:   { glass: [0.02, 0.8, 0.45],  glow: [0.05, 1.0, 0.5],  edge: '#04664a' },
+  f:   { glass: [1.0, 0.3, 0.0],    glow: [1.0, 0.35, 0.0],  edge: '#902800' },
+  s:   { glass: [0.1, 0.85, 1.0],   glow: [0.15, 0.9, 1.0],  edge: '#005c78' },
 };
 const gateMeshes = new Map();
 function gateTex(text, edge) {
@@ -65,38 +74,131 @@ function gateMeshFor(label, edge) {
   return gateMeshes.get(key);
 }
 function makeGate(spec, t) {
-  const op = spec.weapon ? 'w' : (spec.op || '+'), v = spec.val || 1;
-  const kind = op === 'w' ? 'w' : op === 'x' ? 'x' : op === '-' ? '-' : '';
+  const v = spec.val || 1, op = spec.op || '+';
+  const kind = spec.weapon ? 'w' : spec.buff === 'frenzy' ? 'f' : spec.buff === 'shield' ? 's' : op === 'x' ? 'x' : op === '-' ? '-' : op === '/' ? '/' : '';
   const style = GATE_STYLE[kind || (v < 10 ? 'add' : 'big')];
-  const label = op === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : op === 'x' ? '×' + v : op === '-' ? '−' + v : '+' + v;
-  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true };
+  const label = kind === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : kind === 'f' ? 'FRENZY' : kind === 's' ? 'SHIELD'
+    : kind === 'x' ? '×' + v : kind === '-' ? '−' + v : kind === '/' ? '÷' + v : '+' + v;
+  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true };
 }
 function setWeapon(name) {
   wName = WEAPONS[name] ? name : 'laser'; W = WEAPONS[wName];
   atk = wName !== 'rifle'; setSoldierLook(atk);
   popup(W.label, clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);
 }
+function loseNearest(k, x, d) { // the k soldiers closest to (x, d) die
+  for (let n = 0; n < k && N > 0; n++) { let best = 0, bd = 1e9; for (let i = 0; i < N; i++) { const q = Math.abs(sX[i] - x) + Math.abs(sD[i] - d); if (q < bd) { bd = q; best = i; } } killSoldier(best); }
+}
 function gateSpecial(g) {
   if (g.kind === 'x') {
     addSoldiers(Math.max(0, Math.min(MAXS - N, Math.round(N * (g.val - 1)))), g.x - 0.6, g.d, 1.3);
     sfx.gate99(); popup(g.label, g.x - 0.6, 3.0, g.d, '#f0c8ff', '#3a0a5a', 3.4, 1.0, 2.2);
     burst(g.x, 1, g.d, 60, 10, 1.6, 0.5, 2.4, 1.1, 0.5, -5, 3); ring(g.x, g.d, 0.5, 6, 0.4, 0xc070ff); shake = Math.max(shake, 0.25);
-  } else if (g.kind === '-') {
-    const k = Math.min(N, g.val);
-    for (let n = 0; n < k; n++) { let best = 0, bd = 1e9; for (let i = 0; i < N; i++) { const q = Math.abs(sX[i] - g.x) + Math.abs(sD[i] - g.d); if (q < bd) { bd = q; best = i; } } killSoldier(best); }
+  } else if (g.kind === '-' || g.kind === '/') {
+    loseNearest(g.kind === '-' ? g.val : N - Math.floor(N / g.val), g.x, g.d);
     popup(g.label, g.x - 0.6, 3.0, g.d, '#ff8080', '#4a0000', 3.2, 1.0, 2.2); burst(g.x, 1, g.d, 40, 8, 2.4, 0.3, 0.2, 1.0, 0.5, -5, 3);
     ring(g.x, g.d, 0.5, 6, 0.4, 0xff3030); shake = Math.max(shake, 0.35);
-    if (N <= 0) loseMsg = 'A red gate took your last soldiers.<br>Steer off the belt when a minus gate comes!';
+    if (N <= 0) loseMsg = 'A red gate took your last soldiers.<br>Steer off the belt when a red gate comes!';
   } else if (g.kind === 'w') {
     setWeapon(g.weapon); sfx.power(); fovK = 1;
     burst(X, 0.8, D, 60, 9, 0.4, 2.4, 1.4, 1.2, 0.6, -4, 3); ring(X, D, 0.5, 6.5, 0.5, W.ring);
+  } else if (g.kind === 'f') {
+    frenzyT = g.secs; sfx.power(); popup('FRENZY! x2 FIRE', clamp(X, -2, 2), 3.4, D + 2, '#ffb020', '#4a1500', 2.4, 1.4, 1.4);
+    burst(X, 0.8, D, 50, 9, 2.4, 1.0, 0.1, 1.1, 0.5, -4, 3); ring(X, D, 0.5, 6.5, 0.5, 0xff7a10);
+  } else if (g.kind === 's') {
+    shieldT = g.secs; sfx.power(); popup('SHIELD ' + g.secs + 's', clamp(X, -2, 2), 3.4, D + 2, '#a8f4ff', '#003a50', 2.4, 1.4, 1.4);
+    ring(X, D, 0.5, 7, 0.5, 0x60e0ff);
   }
 }
-function splash(x, d, r, dmg) { // rocket blast: damages every enemy in the radius
+function splash(x, d, r, dmg) { // area damage to every enemy in the radius
   const r2 = r * r;
   for (let j = 0; j < E; j++) { if (eHp[j] <= 0) continue; const dx = eX[j] - x, dd = eD[j] - d; if (dx * dx + dd * dd < r2) { eHp[j] -= dmg; if (eHp[j] <= 0) killEnemy(j, true); } }
   if (PT < MAXPT - 250) burst(x, 0.8, d, 8, 7, 2.4, 1.1, 0.2, 1.0, 0.3, -6, 2);
   if (thr('boom', 70)) noise(0.16, 0.05, 2500, 200);
+}
+function chain(j, dmg) { // tesla: the bolt jumps to up to 3 more enemies, weakening each time
+  let x = eX[j], d = eD[j], cur = j;
+  for (let hop = 0; hop < 4 && cur >= 0; hop++) {
+    eHp[cur] -= dmg; x = eX[cur]; d = eD[cur];
+    if (PT < MAXPT - 250) burst(x, 0.9, d, 3, 3, 1.3, 0.9, 2.5, 0.6, 0.18);
+    if (eHp[cur] <= 0) killEnemy(cur, hop > 0);
+    dmg *= 0.75; let nx = -1, nb = 6.8;
+    for (let i = 0; i < E; i++) { if (eHp[i] <= 0) continue; const q = (eX[i] - x) ** 2 + (eD[i] - d) ** 2; if (q < nb) { nb = q; nx = i; } }
+    cur = nx;
+  }
+  if (thr('zap', 60)) tone('sawtooth', 1400, 300, 0.07, 0.03);
+}
+
+// ---- hazards: saw blades sweep across the deck at a fixed d; barrels sit in the horde and blow up when shot
+const hazards = [];
+const sawGeo = cylG(0.9, 0.9, 0.12, 14).rotateX(Math.PI / 2), hubGeo = cylG(0.3, 0.3, 0.22, 12).rotateX(Math.PI / 2);
+const sawMat = std({ color: 0xd6dae4, roughness: 0.22, metalness: 0.95 }), hubMat = std({ color: 0xd0181f, roughness: 0.4, metalness: 0.4, emissive: 0x500000 });
+const barrelGeo = cylG(0.42, 0.42, 1.05, 16), bandGeo = cylG(0.44, 0.44, 0.16, 16);
+const barrelMat = std({ color: 0xd8261c, roughness: 0.4, metalness: 0.5 }), bandMat = std({ color: 0xffc400, roughness: 0.35, metalness: 0.6, emissive: 0x332200 });
+const trackMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.15, 0.1), transparent: true, opacity: 0.35, depthWrite: false });
+function buildHazards() {
+  for (const h of hazards) { scene.remove(h.mesh); if (h.track) scene.remove(h.track); }
+  hazards.length = 0;
+  for (const s of L.hazards || []) {
+    const g = new THREE.Group(); scene.add(g);
+    if (s.type === 'saw') {
+      const blade = new THREE.Mesh(sawGeo, sawMat); blade.castShadow = true; g.add(blade); g.add(new THREE.Mesh(hubGeo, hubMat));
+      const track = new THREE.Mesh(flatQuad, trackMat); track.position.set((s.x0 + s.x1) / 2, 0.07, -s.d); track.scale.set(s.x1 - s.x0 + 1.8, 1, 0.5); scene.add(track);
+      hazards.push({ type: 'saw', d: s.d, x0: s.x0, x1: s.x1, speed: s.speed || 1.6, ph: s.phase || 0, x: s.x0, mesh: g, blade, track, cd: 0 });
+    } else if (s.type === 'barrel') {
+      const b = new THREE.Mesh(barrelGeo, barrelMat); b.position.y = 0.53; b.castShadow = true; g.add(b);
+      for (const y of [0.25, 0.8]) { const r = new THREE.Mesh(bandGeo, bandMat); r.position.y = y; g.add(r); }
+      g.position.set(s.x, 0, -s.d);
+      hazards.push({ type: 'barrel', x: s.x, d: s.d, hp: s.hp || 4, r: s.radius || 3.2, mesh: g });
+    }
+  }
+}
+function blowBarrel(h) {
+  h.hp = 0; h.mesh.visible = false;
+  burst(h.x, 1, h.d, 70, 13, 2.5, 1.2, 0.2, 1.4, 0.6, -10, 4); burst(h.x, 1, h.d, 30, 5, 2.5, 2.5, 2.5, 2.4, 0.3);
+  ring(h.x, h.d, 0.5, h.r * 2, 0.45, 0xffa040); shake = Math.max(shake, 0.4); sfx.bossHit(); noise(0.4, 0.1, 3000, 120);
+  popup('BOOM!', h.x, 3.2, h.d, '#ffe23a', '#5a1a00', 2.2, 0.8, 2);
+  splash(h.x, h.d, h.r, 30);
+}
+function updateHazards(dt) {
+  if (shieldT > 0) { shieldT -= dt; shieldFx -= dt; if (shieldFx <= 0) { shieldFx = 0.35; ring(X, D, hw + 0.2, hw + 1.6, 0.35, 0x60e0ff); } }
+  if (frenzyT > 0) frenzyT -= dt;
+  for (const h of hazards) {
+    if (h.type !== 'saw') continue;
+    h.x = h.x0 + (h.x1 - h.x0) * (0.5 + 0.5 * Math.sin(time * h.speed + h.ph));
+    h.mesh.position.set(h.x, 0.75, -h.d); h.blade.rotation.z -= dt * 18;
+    h.cd -= dt;
+    if (state === 'play' && h.cd <= 0 && Math.abs(h.d - D) < hd + 1.5) {
+      let k = 0;
+      for (let i = N - 1; i >= 0 && k < 1; i--) if (Math.abs(sX[i] - h.x) < 0.85 && Math.abs(sD[i] - h.d) < 0.5) {
+        if (shieldT > 0) { h.cd = 0.3; ring(sX[i], sD[i], 0.3, 1.6, 0.25, 0x60e0ff); break; }
+        killSoldier(i); k++;
+      }
+      if (k) { h.cd = 0.16; burst(h.x, 0.6, h.d, 10, 7, 2.4, 2.2, 1.6, 0.5, 0.25, -8, 3); if (N <= 0) loseMsg = 'The saw blades shredded your squad.<br>Watch their sweep and slip past!'; }
+    }
+  }
+}
+
+
+// ---- themes: original palettes for sky, fog, water, deck, barriers and lights (the stock look is 'dusk')
+const THEMES = {
+  dusk:   { bg: [0.012, 0.04, 0.12], fog: [0.03, 0.075, 0.19], deep: [0.006, 0.026, 0.09], shal: [0.018, 0.10, 0.28], glint: [0.22, 0.42, 0.72], deck: 0xffffff, conc: 0xa3a8b6, pier: 0x5c6276, sun: [0xfff0da, 0.82], hemi: [0xdbeaff, 0x56607c, 0.27], rim: [0xcfe0ff, 0.34], css: '#0a1838' },
+  day:    { bg: [0.22, 0.5, 0.92], fog: [0.42, 0.64, 0.94], deep: [0.01, 0.08, 0.30], shal: [0.04, 0.26, 0.62], glint: [0.7, 0.9, 1.0], deck: 0xffffff, conc: 0xb8bfcc, pier: 0x6a7286, sun: [0xffffff, 0.95], hemi: [0xe8f4ff, 0x7a8aa0, 0.42], rim: [0xffffff, 0.3], css: '#4a8ef0' },
+  sunset: { bg: [0.50, 0.14, 0.22], fog: [0.80, 0.36, 0.30], deep: [0.08, 0.02, 0.10], shal: [0.40, 0.11, 0.22], glint: [1.0, 0.62, 0.35], deck: 0xffe2cc, conc: 0xc8a29a, pier: 0x6e4a58, sun: [0xffb070, 0.95], hemi: [0xffd2b0, 0x5a3044, 0.34], rim: [0xff9a7a, 0.42], css: '#8a2a3a' },
+  neon:   { bg: [0.03, 0.0, 0.08], fog: [0.12, 0.02, 0.22], deep: [0.02, 0.0, 0.06], shal: [0.10, 0.0, 0.28], glint: [0.2, 1.0, 1.0], deck: 0xc4c0e0, conc: 0x8a80b0, pier: 0x3a2c5a, sun: [0xd8b8ff, 0.72], hemi: [0xb0a0ff, 0x30204a, 0.3], rim: [0x40f0ff, 0.6], css: '#12042a' },
+  toxic:  { bg: [0.03, 0.08, 0.02], fog: [0.12, 0.22, 0.06], deep: [0.02, 0.05, 0.01], shal: [0.12, 0.28, 0.04], glint: [0.6, 1.0, 0.2], deck: 0xdde6cc, conc: 0x9aa884, pier: 0x4a5636, sun: [0xeaffb0, 0.8], hemi: [0xe0ffc0, 0x3a4a22, 0.3], rim: [0xb0ff60, 0.42], css: '#16260a' },
+  desert: { bg: [0.70, 0.50, 0.28], fog: [0.88, 0.70, 0.44], deep: [0.0, 0.20, 0.26], shal: [0.05, 0.50, 0.52], glint: [0.8, 1.0, 0.95], deck: 0xfff0d0, conc: 0xd8c09a, pier: 0x8a7254, sun: [0xffe8b8, 1.0], hemi: [0xfff0d0, 0x8a6a44, 0.42], rim: [0xffe0a0, 0.35], css: '#c09050' },
+  storm:  { bg: [0.10, 0.04, 0.05], fog: [0.22, 0.08, 0.08], deep: [0.04, 0.02, 0.03], shal: [0.20, 0.06, 0.07], glint: [1.0, 0.35, 0.25], deck: 0xdcd0d0, conc: 0x9a8a8e, pier: 0x4a3438, sun: [0xffd0c0, 0.75], hemi: [0xffc8c8, 0x402028, 0.3], rim: [0xff6a5a, 0.5], css: '#2a0c10' },
+  frost:  { bg: [0.72, 0.82, 0.92], fog: [0.86, 0.92, 0.98], deep: [0.12, 0.30, 0.38], shal: [0.62, 0.84, 0.90], glint: [1.0, 1.0, 1.0], deck: 0xeaf6ff, conc: 0xd8e6f2, pier: 0x8aa0b8, sun: [0xf0f8ff, 0.92], hemi: [0xffffff, 0x8fa8c0, 0.48], rim: [0xd0f0ff, 0.4], css: '#8cb6dc' },
+};
+const ARCH_THEME = { classic: 'dusk', swarm: 'sunset', saws: 'neon', arsenal: 'day', boom: 'toxic', siege: 'desert', bossrush: 'storm', frost: 'frost' };
+function applyTheme(name) {
+  const T = THEMES[name] || THEMES.dusk;
+  scene.background.setRGB(...T.bg); scene.fog.color.setRGB(...T.fog);
+  waterMat.uniforms.uDeep.value.setRGB(...T.deep); waterMat.uniforms.uShal.value.setRGB(...T.shal); waterMat.uniforms.uGlint.value.setRGB(...T.glint);
+  TM.deck.color.setHex(T.deck); TM.conc.color.setHex(T.conc); TM.pier.color.setHex(T.pier);
+  sun.color.setHex(T.sun[0]); sun.intensity = T.sun[1]; hemi.color.setHex(T.hemi[0]); hemi.groundColor.setHex(T.hemi[1]); hemi.intensity = T.hemi[2]; rim.color.setHex(T.rim[0]); rim.intensity = T.rim[1];
+  stage.style.background = T.css;
 }
 
 // ---- levels
@@ -107,6 +209,7 @@ const STOCK_LEVEL = {
   cage: { x: -4.6, d: 16.2, hp: 30, weapon: 'laser' },
   bosses: [{ kind: 0, at: 12.6, ahead: 26 }, { kind: 1, at: 21.0, ahead: 26 }],
   final: { hp: 9999, cap: 36, speed: 2.2, wakeAt: 29 },
+  hazards: [],
   stars: [150, 300],
 };
 function normLevel(Lv, i) {
@@ -117,13 +220,16 @@ function normLevel(Lv, i) {
   o.horde = (o.horde || []).map(h => { const q = Object.assign({ gap: 0.62, type: 'grunt' }, h); q.ty = ETYPE[q.type] || 0; if (q.hp == null) q.hp = EHP[q.ty]; return q; });
   o.gates = (o.gates || []).map(g => Object.assign({ every: 0, count: 1, val: 1 }, g));
   o.bosses = (o.bosses || []).map(b => Object.assign({ ahead: 26, dx: 0 }, b));
+  o.hazards = o.hazards || [];
   return o;
 }
 function checkLevel(Lv) { // the engine's hard limits; a broken level still loads, but says why in the console
   const w = [], times = [];
   for (const g of Lv.gates) {
     if (g.weapon && !WEAPONS[g.weapon]) w.push('unknown weapon "' + g.weapon + '" (have: ' + Object.keys(WEAPONS) + ')');
-    if (!g.weapon && !(g.val >= 1)) w.push('gate values must be >= 1 (use op: "-" for minus gates)');
+    if (g.buff && g.buff !== 'frenzy' && g.buff !== 'shield') w.push('unknown buff "' + g.buff + '" (have: frenzy, shield)');
+    if (g.op && !['+', '-', 'x', '/'].includes(g.op)) w.push('unknown gate op "' + g.op + '" (have: + - x /)');
+    if (!g.weapon && !g.buff && !(g.val >= 1)) w.push('gate values must be >= 1 (use op: "-" for minus gates)');
     for (let j = 0; j < g.count; j++) times.push(g.t + g.every * j);
   }
   times.sort((a, b) => a - b);
@@ -135,7 +241,9 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
   let e = 0; for (const h of Lv.horde) e += Math.floor((h.d1 - h.d0) / h.gap + 1) * Math.floor((h.x1 - h.x0) / h.gap + 1);
   if (e > MAXE) w.push('horde has ~' + e + ' enemies; only the first ' + MAXE + ' spawn');
   for (const h of Lv.horde) if (!(h.type in ETYPE)) w.push('unknown enemy type "' + h.type + '" (have: ' + Object.keys(ETYPE) + ')');
+  for (const h of Lv.hazards) if (h.type !== 'saw' && h.type !== 'barrel') w.push('unknown hazard "' + h.type + '" (have: saw, barrel)');
   for (const b of Lv.bosses) if (b.kind !== 0 && b.kind !== 1) w.push('mid-bosses must be kind 0 or 1 (kind 2 is the final boss and ends the level)');
+  if (Lv.theme && !THEMES[Lv.theme]) w.push('unknown theme "' + Lv.theme + '" (have: ' + Object.keys(THEMES) + ')');
   if (Lv.cage.weapon && !WEAPONS[Lv.cage.weapon]) w.push('unknown cage weapon "' + Lv.cage.weapon + '"');
   if (Lv.cage.x > -2) w.push('keep the cage at x <= -2: the squad is pushed to its right side, and the belt is at x = ' + LANE_X);
   if (Lv.final.wakeAt > D_MAX) w.push('final.wakeAt must be <= ' + D_MAX + ' (the squad stops advancing there)');
@@ -144,41 +252,82 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
 
 // ---- generator: every level past the hand-made ones. Seeded, so level N is always the same level.
 function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const ARCHETYPES = [ // [id, HUD name, first level it can appear on]
+  ['classic', '', 1], ['swarm', 'SWARM', 2], ['saws', 'SAWS', 3], ['arsenal', 'ARSENAL', 4],
+  ['boom', 'BOOM', 5], ['siege', 'SIEGE', 6], ['bossrush', 'BOSS RUSH', 8], ['frost', 'FROST', 11],
+];
+const WEAPON_UNLOCK = { laser: 1, rapid: 3, spread: 4, rocket: 5, flame: 6, rail: 7, shock: 9, freeze: 11 };
 function generateLevel(n) {
   const R = rng(n * 9973 + 17), pick = a => a[Math.floor(R() * a.length)], k = Math.min(1, (n - 1) / 30); // k: difficulty 0..1 over 30 levels
-  const unlocked = ['laser'].concat(n >= 3 ? ['rapid'] : [], n >= 4 ? ['spread'] : [], n >= 5 ? ['rocket'] : [], n >= 7 ? ['rail'] : []);
+  const archs = ARCHETYPES.filter(a => a[2] <= n), arch = n < 2 ? ARCHETYPES[0] : pick(archs), A = arch[0];
+  const unlocked = Object.keys(WEAPON_UNLOCK).filter(w => WEAPON_UNLOCK[w] <= n), finisher = unlocked.filter(w => w !== 'freeze' && w !== 'flame');   // short-range/utility weapons are poor against the final boss
   const wakeAt = Math.round(29 + k * 9), tWake = wakeAt / V_SQUAD;
-  const cage = { x: -4.6 + R() * 0.8, d: 13 + R() * 5, hp: Math.min(60, 30 + Math.round(n * 1.5)), weapon: n < 4 ? 'laser' : pick(unlocked) };
-  // gate timeline: a stream of small gates, some of them swapped for multipliers, traps and a weapon; big gates near the boss
-  const bigT = tWake - 1.2 - R() * 0.6, every = 0.38 + R() * 0.15 + k * 0.08, sv = n >= 6 && R() < 0.5 ? 2 : 1;
+  const cage = { x: -4.6 + R() * 0.8, d: 13 + R() * 5, hp: 30 + Math.min(15, Math.round(n * 0.75)) + (A === 'siege' ? 8 : 0),
+    weapon: A === 'boom' ? pick(['rocket', 'flame'].filter(w => unlocked.includes(w)).concat('laser')) : A === 'frost' ? 'freeze' : n < 4 ? 'laser' : pick(finisher) };
+  // gate timeline: a stream of small gates, some swapped for multipliers, traps, buffs and weapons; big gates near the boss
+  const bigT = tWake - 1.2 - R() * 0.6, every = Math.max(0.3, 0.36 + R() * 0.12 + k * 0.04 - (A === 'swarm' ? 0.05 : 0)), sv = n >= 6 && R() < 0.5 ? 2 : 1;
   const slots = []; for (let t = 1.8; t < bigT - 1.4 && slots.length < 62; t += every) slots.push({ t: +t.toFixed(2), val: sv });
-  const at = f => slots[Math.min(slots.length - 1, Math.floor(slots.length * f))];
+  const at = f => { for (let tries = 0; tries < 8; tries++) { const s = slots[Math.min(slots.length - 1, Math.floor(slots.length * f) + tries)]; if (s && !s.op && !s.weapon && !s.buff) return s; } return {}; };
   if (n >= 2) Object.assign(at(0.42 + R() * 0.1), { op: 'x', val: 2 });
-  if (n >= 8 && R() < 0.6) Object.assign(at(0.7 + R() * 0.08), { op: 'x', val: 2 });
-  if (n >= 3) { const traps = Math.min(4, 1 + Math.floor(n / 6)); for (let i = 0; i < traps; i++) { const s = at(0.2 + R() * 0.75); if (!s.op) s.op = '-'; } }   // trap sizes are set below
-  if (n >= 3) { const wpn = pick(unlocked.filter(w => w !== cage.weapon)); const s = at(0.55 + R() * 0.1); delete s.op; s.val = 1; s.weapon = wpn; }
+  if ((n >= 8 && R() < 0.6) || A === 'swarm') Object.assign(at(0.7 + R() * 0.08), { op: 'x', val: 2 });
+  const weaponGates = n < 3 ? 0 : A === 'arsenal' ? 3 : 1;
+  for (let i = 0; i < weaponGates; i++) { // the last weapon gate is the one you fight the boss with, so never freeze or flame
+    const pool = (i === weaponGates - 1 ? finisher : unlocked).filter(w => w !== cage.weapon);
+    const s = at((0.3 + 0.55 * (i + 1) / weaponGates) - 0.05 + R() * 0.05); delete s.op; s.val = 1; s.weapon = pick(pool.length ? pool : ['laser']);
+  }
+  if (n >= 3) { // traps go in after the weapon gates and never right next to one, so dodging a trap can't cost you a weapon
+    const traps = Math.min(4, 1 + Math.floor(n / 6)) + (A === 'saws' ? 1 : 0);
+    for (let i = 0; i < traps; i++) {
+      const s = at(0.35 + R() * 0.6), j = slots.indexOf(s);
+      if (j >= 0 && ![-2, -1, 1, 2].some(o => slots[j + o] && (slots[j + o].weapon || slots[j + o].op === '-' || slots[j + o].op === '/'))) s.op = n >= 10 && R() < 0.25 ? '/' : '-';
+    }
+  }
+  if (A === 'arsenal' || A === 'bossrush' || (n >= 6 && R() < 0.35)) { const s = at(0.9); s.buff = 'frenzy'; s.secs = 6; }
+  if (A === 'saws' || A === 'bossrush' || (n >= 5 && R() < 0.3)) { const s = at(0.25 + R() * 0.3); s.buff = 'shield'; s.secs = 5; }
   const bigN = 2 + Math.floor(R() * 3), bigV = pick([50, 99]), bigE = 1.0 + R() * 0.2;
   for (let i = 0; i < bigN; i++) slots.push({ t: +(bigT + i * bigE).toFixed(2), val: bigV });
-  // expected squad if every gate is taken (traps included), used to size the boss and the stars
-  let ex = 1; for (const s of slots) {
-    if (s.weapon) continue;
+  // expected squad if every gate is taken (traps included); sizes traps, the boss and the stars
+  let ex = 1, wpn = cage.weapon, frenzyLate = false;
+  for (const s of slots) {
+    if (s.weapon) { wpn = s.weapon; continue; }
+    if (s.buff) { if (s.buff === 'frenzy' && s.t > bigT - 4) frenzyLate = true; continue; }
     if (s.op === '-') s.val = Math.max(2, Math.round(ex * (0.12 + 0.13 * k)));   // a trap costs a share of the squad you should have by then
-    ex = s.op === 'x' ? ex * s.val : s.op === '-' ? Math.max(1, ex - s.val) : ex + s.val; ex = Math.min(MAXS, ex);
+    if (s.op === '/') s.val = 2;
+    ex = s.op === 'x' ? ex * s.val : s.op === '-' ? Math.max(1, ex - s.val) : s.op === '/' ? Math.max(1, Math.floor(ex / s.val)) : ex + s.val; ex = Math.min(MAXS, ex);
   }
-  // horde: bands along the bridge, tougher types unlock as levels go on
-  const types = ['grunt'].concat(n >= 2 ? ['runner'] : [], n >= 3 ? ['brute'] : []), d0 = cage.d + 1.3, d1 = 62.6, bands = 2 + Math.floor(R() * 2);
+  if (A === 'saws') ex *= 0.85;
+  // horde: bands along the bridge; the archetype picks which enemy types fill them
+  const typePool = A === 'swarm' ? ['runner', 'runner', 'grunt'] : A === 'siege' ? ['brute', 'brute', 'grunt'] : A === 'boom' ? ['bomber', 'bomber', 'grunt']
+    : ['grunt'].concat(n >= 2 ? ['runner'] : [], n >= 3 ? ['brute'] : [], n >= 5 ? ['bomber'] : []);
+  const d0 = cage.d + 1.3, d1 = 62.6, bands = 2 + Math.floor(R() * 2), thin = A === 'bossrush' ? 1.25 : 1;
   const horde = []; let cells = 0;
   for (let i = 0; i < bands; i++) {
-    const a = d0 + (d1 - d0) * i / bands, b = d0 + (d1 - d0) * (i + 1) / bands - 0.6, type = i === 0 ? 'grunt' : pick(types);
-    const h = { x0: -6.05, x1: 2.85, d0: +a.toFixed(1), d1: +b.toFixed(1), gap: type === 'brute' ? 0.9 : 0.62, type };
-    if (type === 'brute') h.hp = 4 + Math.floor(n / 6);
+    const a = d0 + (d1 - d0) * i / bands, b = d0 + (d1 - d0) * (i + 1) / bands - 0.6, type = i === 0 ? 'grunt' : pick(typePool);   // the first band is always grunts: the squad is tiny then
+    const h = { x0: -6.05, x1: 2.85, d0: +a.toFixed(1), d1: +b.toFixed(1), gap: +((type === 'brute' ? 0.9 : 0.62) * thin).toFixed(2), type };
+    if (type === 'brute') h.hp = Math.min(8, 4 + Math.floor(n / 8)) + (A === 'siege' ? 1 : 0);
     horde.push(h); cells += ((b - a) / h.gap + 1) * (8.9 / h.gap + 1);
   }
   if (cells > 1250) for (const h of horde) h.gap = +(h.gap * Math.sqrt(cells / 1250)).toFixed(2);
-  const nb = Math.min(3, 1 + Math.floor(n / 4)), bosses = [];
-  for (let i = 0; i < nb; i++) { const kind = i % 2; bosses.push({ kind, at: +(12 + (wakeAt - 19) * (nb > 1 ? i / (nb - 1) : 0)).toFixed(1), ahead: 24 + Math.floor(R() * 3), hp: Math.round((kind ? 1200 : 520) * (1 + k * 0.7)) }); }
-  const soak = 3.4 + k * 0.9;  // seconds of full-squad fire the final boss soaks
-  return { name: 'STAGE ' + n, generated: true, gates: slots, horde, cage, bosses, final: { hp: Math.max(4000, Math.round(ex * 0.85 * 7.4 * soak / 100) * 100), wakeAt }, stars: [Math.round(ex * 0.45), Math.round(ex * 0.8)] };
+  // hazards
+  const hazards = [];
+  if (A === 'saws' || (n >= 7 && R() < 0.3)) {
+    const nSaw = A === 'saws' ? 2 + Math.floor(R() * 2) : 1;
+    for (let i = 0; i < nSaw; i++) {
+      let d = 7 + (wakeAt - 12) * (i + 0.5) / nSaw + R() * 2; if (Math.abs(d - cage.d) < 3) d += 4;
+      const belt = R() < 0.5;   // a belt saw guards the gates; a deck saw guards the cage side
+      hazards.push({ type: 'saw', d: +d.toFixed(1), x0: belt ? 1.5 : -6, x1: belt ? 6.2 : 0.5, speed: +(1.2 + R() * 1.2 + k * 0.6).toFixed(2), phase: +(R() * 6).toFixed(2) });
+    }
+  }
+  if (A === 'boom' || (n >= 5 && R() < 0.3)) {
+    const nb = A === 'boom' ? 6 + Math.floor(R() * 6) : 3;
+    for (let i = 0; i < nb; i++) hazards.push({ type: 'barrel', x: +(-5.4 + R() * 7.6).toFixed(2), d: +(d0 + 3 + R() * (d1 - d0 - 8)).toFixed(1) });
+  }
+  // mid-bosses
+  const nb = Math.min(A === 'bossrush' ? 4 : 3, 1 + Math.floor(n / 5) + (A === 'bossrush' ? 2 : 0)), bosses = [];
+  for (let i = 0; i < nb; i++) { const kind = i % 2; bosses.push({ kind, at: +(14 + (wakeAt - 21) * (nb > 1 ? i / (nb - 1) : 0)).toFixed(1), ahead: 24 + Math.floor(R() * 3), hp: Math.round((kind ? 1200 : 520) * (i === 0 ? 1 : 1 + k * 0.7) * (A === 'bossrush' ? 0.85 : 1)) }); }   // the first one stays at stock strength
+  const soak = (3.4 + k * 0.9) * (frenzyLate ? 1.3 : 1);   // seconds of full-squad fire the final boss soaks
+  return { name: 'STAGE ' + n + (arch[1] ? ' · ' + arch[1] : ''), archetype: A, theme: A === 'classic' ? pick(['dusk', 'day']) : ARCH_THEME[A], generated: true, gates: slots, horde, cage, bosses, hazards,
+    final: { hp: Math.max(4000, Math.round(ex * 0.85 * WEAPONS[wpn].dps * soak / 100) * 100), wakeAt }, stars: [Math.round(ex * 0.45), Math.round(ex * 0.8)] };
 }
 const HAND_LEVELS = (() => {
   try { const m = location.hash.match(/lvl=([^&]+)/); if (m) return [JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')))))]; } catch (e) { console.warn('bad #lvl= level', e); }
@@ -202,9 +351,11 @@ APPLY_LEVEL = r"""function applyLevel() {
   L = getLevel(LI);
   CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = L.cage.hp;
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
-  W = WEAPONS.rifle; wName = 'rifle';
+  W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0;
   const cw = WEAPONS[L.cage.weapon] || WEAPONS.laser, lc = lblCrate.ctx; lc.clearRect(0, 0, 640, 160);
   fancyText(lc, cw.label, 320, 80, cw.label.length > 8 ? 92 : 108, '#ffe23a', '#6a0a56', 22); lblCrate.tex.needsUpdate = true;
+  buildHazards();
+  applyTheme(L.theme);
   $('hudL').textContent = L.name;
   try { const u = new URL(location.href); if (u.searchParams.get('level') !== String(LI + 1) && !location.hash) { u.searchParams.set('level', LI + 1); history.replaceState(null, '', u); } } catch (e) {}
 }
@@ -223,11 +374,12 @@ HORDE_OLD = """  // horde
   for (let j = 0; j < 49; j++) gates.push({ x: LANE_X, d: REL * (2.0 + 0.4 * j), val: 1, alive: true });
   for (let j = 0; j < 3; j++) gates.push({ x: LANE_X, d: REL * (23.0 + j * 1.1), val: 99, alive: true });
 """
-HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room around the cage
+HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room around the cage and the barrels
   for (const h of L.horde) for (let d = h.d0; d <= h.d1 + 0.01; d += h.gap) for (let x = h.x0; x <= h.x1 + 0.01; x += h.gap) {
     if (Math.abs(x - CAGE_X) < 2.2 && Math.abs(d - CAGE_D) < 2.6) continue;
+    if (hazards.some(z => z.type === 'barrel' && Math.abs(x - z.x) < 0.7 && Math.abs(d - z.d) < 0.7)) continue;
     if (E >= MAXE) break;
-    eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = h.hp; eTy[E] = h.ty; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;
+    eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = h.hp; eTy[E] = h.ty; eSlow[E] = 0; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;
   }
   // gates on the belt: a gate with arrival time t starts at distance REL*t and meets the squad front at t seconds
   gates.length = 0;
@@ -236,9 +388,19 @@ HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room aroun
 """
 
 PATCHES = [  # (old, new, expected count) -- applied in order
+    # ---- themes: expose the world materials and lights, make the water colours uniforms
+    ("scene.add(new THREE.HemisphereLight(0xdbeaff, 0x56607c, 0.27));", "const hemi = new THREE.HemisphereLight(0xdbeaff, 0x56607c, 0.27); scene.add(hemi);", 1),
+    ("let beltTex, waterMat;", "let beltTex, waterMat; const TM = {};", 1),
+    ("deck.position.set(0, 0, DKC); deck.receiveShadow = true; scene.add(deck);", "deck.position.set(0, 0, DKC); deck.receiveShadow = true; scene.add(deck); TM.deck = deckMat;", 1),
+    ("  const prof = [[0, -0.25]", "  TM.conc = conc; TM.pier = pierM;\n  const prof = [[0, -0.25]", 1),
+    ("waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 } },",
+     "waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uDeep: { value: new THREE.Color(0.006, 0.026, 0.09) }, uShal: { value: new THREE.Color(0.018, 0.10, 0.28) }, uGlint: { value: new THREE.Color(0.22, 0.42, 0.72) } },", 1),
+    ("fragmentShader: `uniform float uT; varying vec3 vW;", "fragmentShader: `uniform float uT; uniform vec3 uDeep, uShal, uGlint; varying vec3 vW;", 1),
+    ("vec3 c = mix(vec3(0.006, 0.026, 0.09), vec3(0.018, 0.10, 0.28), smoothstep(0.25, 0.8, w));", "vec3 c = mix(uDeep, uShal, smoothstep(0.25, 0.8, w));", 1),
+    ("c += vec3(0.22, 0.42, 0.72) * g * 0.4;", "c += uGlint * g * 0.4;", 1),
     # ---- level data
     ("const CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", "let CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", 1),
-    ("let E = 0;\n", "let E = 0;\nconst eTy = new Uint8Array(MAXE);\n", 1),
+    ("let E = 0;\n", "let E = 0;\nconst eTy = new Uint8Array(MAXE), eSlow = new Float32Array(MAXE);\n", 1),
     ("let crackT = 0;\n", "let crackT = 0;\n" + RUNTIME, 1),
     ("function reset() {\n", APPLY_LEVEL, 1),
     (HORDE_OLD, HORDE_NEW, 1),
@@ -254,6 +416,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "    for (const q of bossQ) if (!q.done && D >= q.at) { q.done = true; spawnBoss(q.kind, clamp(X + q.dx, -4, 1.5), D + q.ahead, true, q); }\n", 1),
     ("if (!b.active) { if (D >= 29)", "if (!b.active) { if (D >= L.final.wakeAt)", 1),
     ("clamp(D / 29, 0, 1)", "clamp(D / L.final.wakeAt, 0, 1)", 1),
+    ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt);", 1),
     # ---- gates: any label, colour per kind, special effects
     ("c = g.val === 1 ? GLASS_B : GLASS_Y, gc = g.val === 1 ? GLOW_B : GLOW_Y", "c = g.glass, gc = g.glow", 1),
     ("    if (g.val === 1) mGateB.setMatrixAt(nb++, _gateM); else mGateY.setMatrixAt(ny++, _gateM);",
@@ -268,32 +431,52 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("popup('+99'", "popup(g.label", 1),
     # ---- weapons
     ("const PSPEED = [36, 54, 36, 54], PWID = [0.34, 0.72, 0.7, 1.5], PLEN = [1.4, 5.0, 2.2, 6.4], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2];",
-     "const PSPEED = [36, 54, 36, 54, 44, 40, 24, 70], PWID = [0.34, 0.72, 0.7, 1.5, 0.3, 0.42, 0.95, 0.5], PLEN = [1.4, 5.0, 2.2, 6.4, 1.8, 1.6, 1.3, 9.0], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2, RANGE, RANGE - 2, RANGE + 2, RANGE + 8];", 1),
+     "const PSPEED = [36, 54, 36, 54, 44, 40, 24, 70, 30, 64, 46], PWID = [0.34, 0.72, 0.7, 1.5, 0.3, 0.42, 0.95, 0.5, 1.0, 0.4, 0.5], "
+     "PLEN = [1.4, 5.0, 2.2, 6.4, 1.8, 1.6, 1.3, 9.0, 1.1, 3.2, 1.6], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2, RANGE, RANGE - 2, RANGE + 2, RANGE + 8, 14, RANGE + 2, RANGE];", 1),
     ("const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2]];",
-     "const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2], [1.3, 2.0, 0.15], [0.15, 1.5, 2.1], [2.3, 0.65, 0.08], [1.2, 1.7, 2.5]];", 1),
+     "const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2], [1.3, 2.0, 0.15], [0.15, 1.5, 2.1], [2.3, 0.65, 0.08], [1.2, 1.7, 2.5], [2.5, 0.9, 0.05], [1.3, 0.8, 2.6], [1.5, 2.2, 2.5]];", 1),
     ("function fire(x, d, type) {", "function fire(x, d, type, ang = 0) {", 1),
     ("if (nCh > 0 && type < 2)", "if (nCh > 0 && type !== 2 && type !== 3)", 1),
     ("  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;",
-     "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }\n"
+     "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
     ("pDmg[P] = type === 0 ? 1 : type === 1 ? 2.5 : type === 2 ? 5 : 12.5;", "pDmg[P] = PDMG[type];", 1),
     ("sCd[i] += FIRE_INT; sKick[i] = 1; fire(sX[i] + 0.31, sD[i] + 0.95, atk ? 1 : 0);",
-     "sCd[i] += W.int; sKick[i] = 1; for (let k = 0; k < W.shots; k++) fire(sX[i] + 0.31, sD[i] + 0.95, W.type, (k - (W.shots - 1) / 2) * W.fan);", 1),
+     "sCd[i] += W.int * (frenzyT > 0 ? 0.5 : 1); sKick[i] = 1; for (let k = 0; k < W.shots; k++) fire(sX[i] + 0.31, sD[i] + 0.95, W.type, (k - (W.shots - 1) / 2) * W.fan);", 1),
     ("const pw = (ty >= 2 ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
+    ("    if (!dead) for (const b of bosses) {",
+     "    if (!dead) for (const h of hazards) if (h.type === 'barrel' && h.hp > 0 && Math.abs(x - h.x) < 0.45 + pw * 0.5 && d1 >= h.d - 0.45 && d0 <= h.d + 0.45) { h.hp -= dmg; dead = true; if (h.hp <= 0) blowBarrel(h); break; }\n"
+     "    if (!dead) for (const b of bosses) {", 1),
+    ("if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { hitBoss(b, dmg, x); dead = true; break; }",
+     "if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { if (PFX[ty] === 2) b.slowT = 1.5; hitBoss(b, dmg, x); dead = true; break; }", 1),
     ("          const h = eHp[j]; eHp[j] -= dmg; dmg -= h;",
      "          if (PSPL[ty]) { splash(eX[j], eD[j], PSPL[ty], dmg); dead = true; break scan; }\n"
+     "          if (PFX[ty] === 1) { chain(j, dmg); dead = true; break scan; }\n"
+     "          if (PFX[ty] === 3) { eHp[j] -= dmg; if (eHp[j] <= 0) killEnemy(j, Math.random() < 0.6); continue; }\n"
+     "          if (PFX[ty] === 2) eSlow[j] = 2.5;\n"
      "          const h = eHp[j]; eHp[j] -= dmg; dmg -= h;", 1),
     ("pa[o + 13] = t >= 2 ? 2.4 : 0.84;", "pa[o + 13] = (t === 2 || t === 3) ? 2.4 : 0.84;", 1),
     ("  atk = true; setSoldierLook(true); fovK = 1;\n  popup('ATK+150%', clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);",
      "  setWeapon(L.cage.weapon); fovK = 1;", 1),
-    # ---- enemy types
+    # ---- bosses: freeze slows them, a shield blocks a regular smash (not the final boss's slam)
+    ("if (b.d - td >= 0.5) b.d -= b.speed * dt;", "if (b.slowT > 0) b.slowT -= dt;\n      if (b.d - td >= 0.5) b.d -= b.speed * (b.slowT > 0 ? 0.45 : 1) * dt;", 1),
+    ("  b.smashA = 1; sfx.smash(); shake = Math.max(shake, 0.45);",
+     "  b.smashA = 1; sfx.smash(); shake = Math.max(shake, 0.45);\n"
+     "  if (shieldT > 0) { ring(X, D, 0.5, hw + 3, 0.4, 0x60e0ff); popup('BLOCKED', X, 3.2, D + hd, '#a8f4ff', '#003a50', 1.8, 0.7, 2); return; }", 1),
+    # ---- enemy types and status effects
+    ("function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;",
+     "function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;\n"
+     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off", 1),
     ("if (eD[i] - front < 6 && Math.abs(eX[i] - X) < hw + 3.2) eSt[i] = 1;",
      "if (eD[i] - front < 6 + EAGG[eTy[i]] && Math.abs(eX[i] - X) < hw + 3.2 + EAGG[eTy[i]] * 0.5) eSt[i] = 1;", 1),
-    ("st = CHARGE_V * dt;", "st = CHARGE_V * ESPD[eTy[i]] * dt;", 1),
+    ("st = CHARGE_V * dt;", "st = CHARGE_V * ESPD[eTy[i]] * (eSlow[i] > 0 ? (eSlow[i] -= dt, 0.35) : 1) * dt;", 1),
     ("if (best >= 0) { killSoldier(best); killEnemy(i, true); }",
-     "if (best >= 0) { killSoldier(best); if (eTy[i] === 1 && eHp[i] > 1) eHp[i] -= 1; else killEnemy(i, true); }", 1),
-    ("eSt[i] = eSt[E]; ePh[i] = ePh[E]; }", "eSt[i] = eSt[E]; ePh[i] = ePh[E]; eTy[i] = eTy[E]; }", 1),
-    ("scl = 0.94 + (ePh[i] % 1) * 0.14;", "scl = (0.94 + (ePh[i] % 1) * 0.14) * ESCL[eTy[i]], ct = ECOL[eTy[i]];", 1),
+     "if (best >= 0) {\n"
+     "      if (shieldT <= 0) { killSoldier(best); if (eTy[i] === 3) loseNearest(2, eX[i], eD[i]); }\n"
+     "      if (eTy[i] === 1 && eHp[i] > 1) eHp[i] -= 1; else killEnemy(i, true);\n"
+     "    }", 1),
+    ("eSt[i] = eSt[E]; ePh[i] = ePh[E]; }", "eSt[i] = eSt[E]; ePh[i] = ePh[E]; eTy[i] = eTy[E]; eSlow[i] = eSlow[E]; }", 1),
+    ("scl = 0.94 + (ePh[i] % 1) * 0.14;", "scl = (0.94 + (ePh[i] % 1) * 0.14) * ESCL[eTy[i]], ct = eSlow[i] > 0 ? ICE : ECOL[eTy[i]];", 1),
     ("fc[nfar * 3] = tint; fc[nfar * 3 + 1] = tint * 0.92; fc[nfar * 3 + 2] = tint * 0.92;",
      "fc[nfar * 3] = tint * ct[0]; fc[nfar * 3 + 1] = tint * 0.92 * ct[1]; fc[nfar * 3 + 2] = tint * 0.92 * ct[2];", 1),
     ("ec[ne * 3] = tint; ec[ne * 3 + 1] = tint * 0.92; ec[ne * 3 + 2] = tint * 0.92;",
@@ -304,7 +487,8 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "function startGame(advance) {\n  if (advance && state === 'won') LI++;\n  initAudio(); reset();", 1),
     ("startGame(); return; }", "startGame(true); return; }", 1),
     ("state !== 'play') startGame();", "state !== 'play') startGame(true);", 1),
-    ("get s() { return { state,", "get s() { return { level: LI, name: L.name, weapon: wName, state,", 1),
+    ("get s() { return { state,",
+     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), state,", 1),
     (".map(g => ({ d: g.d, val: g.val }))", ".map(g => ({ d: g.d, val: g.val, kind: g.kind, label: g.label }))", 1),
     # ---- levels.js loads before the game
     ("<script>\n(function(){\n  var fill=", "<script src=\"levels.js\"></script>\n<script>\n(function(){\n  var fill=", 1),
@@ -319,3 +503,14 @@ for old, new, n in PATCHES:
 out.mkdir(parents=True, exist_ok=True)
 (out / "index.html").write_text(src)
 print("wrote", out / "index.html", f"({len(PATCHES)} patches)")
+
+# syntax-check the patched game script when Node is available
+import re, shutil, subprocess, tempfile
+if shutil.which("node"):
+    body = re.search(r'<script type="text/plain" id="main">(.*?)</script>', src, re.S).group(1)
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(body)
+    r = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("patched game has a syntax error:\n" + r.stderr)
+    print("syntax OK")
