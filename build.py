@@ -23,19 +23,19 @@ RUNTIME = r"""
 const WEAPONS = {
   rifle:  { type: 0,  int: 0.34, shots: 1, fan: 0,    label: 'RIFLE',      ring: 0xffd060, dps: 2.9 },
   laser:  { type: 1,  int: 0.34, shots: 1, fan: 0,    label: 'ATK+150%',   ring: 0xff66e0, dps: 7.35 },
-  rapid:  { type: 4,  int: 0.15, shots: 1, fan: 0,    label: 'RAPID FIRE', ring: 0xb8ff40, dps: 8 },
-  spread: { type: 5,  int: 0.40, shots: 3, fan: 0.2,  label: 'SPREAD',     ring: 0x40e0ff, dps: 7.5 },
-  rocket: { type: 6,  int: 0.60, shots: 1, fan: 0,    label: 'ROCKETS',    ring: 0xff8a20, dps: 8.3 },
-  rail:   { type: 7,  int: 0.80, shots: 1, fan: 0,    label: 'RAILGUN',    ring: 0xa0c8ff, dps: 8.75 },
-  flame:  { type: 8,  int: 0.30, shots: 2, fan: 0.18, label: 'FLAMER',     ring: 0xff6010, dps: 4.5 },
-  shock:  { type: 9,  int: 0.40, shots: 1, fan: 0,    label: 'TESLA',      ring: 0xa070ff, dps: 7 },
-  freeze: { type: 10, int: 0.34, shots: 1, fan: 0,    label: 'FREEZE',     ring: 0x90f0ff, dps: 4.7 },
+  rapid:  { type: 6,  int: 0.15, shots: 1, fan: 0,    label: 'RAPID FIRE', ring: 0xb8ff40, dps: 8 },
+  spread: { type: 7,  int: 0.40, shots: 3, fan: 0.2,  label: 'SPREAD',     ring: 0x40e0ff, dps: 7.5 },
+  rocket: { type: 8,  int: 0.60, shots: 1, fan: 0,    label: 'ROCKETS',    ring: 0xff8a20, dps: 8.3 },
+  rail:   { type: 9,  int: 0.80, shots: 1, fan: 0,    label: 'RAILGUN',    ring: 0xa0c8ff, dps: 8.75 },
+  flame:  { type: 10,  int: 0.30, shots: 2, fan: 0.18, label: 'FLAMER',     ring: 0xff6010, dps: 4.5 },
+  shock:  { type: 11,  int: 0.40, shots: 1, fan: 0,    label: 'TESLA',      ring: 0xa070ff, dps: 7 },
+  freeze: { type: 12, int: 0.34, shots: 1, fan: 0,    label: 'FREEZE',     ring: 0x90f0ff, dps: 4.7 },
 };
-// per projectile type: 0 rifle, 1 laser, 2 hero, 3 hero+ATK, 4 rapid, 5 spread, 6 rocket, 7 rail, 8 flame, 9 shock, 10 freeze
-const PDMG = [1, 2.5, 5, 12.5, 1.2, 1.0, 5, 7, 1.2, 2.8, 1.6];
-const PHW = [0.42, 0.42, 0.55, 0.55, 0.4, 0.42, 0.6, 0.5, 0.7, 0.42, 0.45];   // hit half-width
-const PSPL = [0, 0, 0, 0, 0, 0, 1.6, 0, 0, 0, 0];                          // splash radius (rockets)
-const PFX = [0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2];                              // 1 chain lightning, 2 freeze, 3 flame (pierces without losing damage)
+// per projectile type: 0 rifle, 1 laser, 2 hero, 3 hero+ATK, 4 ice jet, 5 hero ice jet (stage 2 of the original),
+// 6 rapid, 7 spread, 8 rocket, 9 rail, 10 flame, 11 shock, 12 freeze. Damage is the original's PDMG table, extended below.
+const PHW = [0.42, 0.42, 0.55, 0.55, 0.42, 0.55, 0.4, 0.42, 0.6, 0.5, 0.7, 0.42, 0.45];   // hit half-width
+const PSPL = [0, 0, 0, 0, 0, 0, 0, 0, 1.6, 0, 0, 0, 0];                          // splash radius (rockets)
+const PFX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2];                              // 1 chain lightning, 2 freeze, 3 flame (pierces without losing damage)
 let W = WEAPONS.rifle, wName = 'rifle', frenzyT = 0, shieldT = 0, shieldFx = 0;
 
 // ---- enemy types: 0 grunt, 1 brute (tanky; survives several melee trades), 2 runner (fast, aggros early),
@@ -83,7 +83,7 @@ function makeGate(spec, t) {
 }
 function setWeapon(name) {
   wName = WEAPONS[name] ? name : 'laser'; W = WEAPONS[wName];
-  atk = wName !== 'rifle'; setSoldierLook(atk);
+  atk = wName !== 'rifle'; setSoldierLook(wName === 'freeze' ? 2 : atk ? 1 : 0);
   popup(W.label, clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);
 }
 function loseNearest(k, x, d) { // the k soldiers closest to (x, d) die
@@ -136,10 +136,10 @@ const sawMat = std({ color: 0xd6dae4, roughness: 0.22, metalness: 0.95 }), hubMa
 const barrelGeo = cylG(0.42, 0.42, 1.05, 16), bandGeo = cylG(0.44, 0.44, 0.16, 16);
 const barrelMat = std({ color: 0xd8261c, roughness: 0.4, metalness: 0.5 }), bandMat = std({ color: 0xffc400, roughness: 0.35, metalness: 0.6, emissive: 0x332200 });
 const trackMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.15, 0.1), transparent: true, opacity: 0.35, depthWrite: false });
-function buildHazards() {
+function buildHazards(list) {
   for (const h of hazards) { scene.remove(h.mesh); if (h.track) scene.remove(h.track); }
   hazards.length = 0;
-  for (const s of L.hazards || []) {
+  for (const s of list) {
     const g = new THREE.Group(); scene.add(g);
     if (s.type === 'saw') {
       const blade = new THREE.Mesh(sawGeo, sawMat); blade.castShadow = true; g.add(blade); g.add(new THREE.Mesh(hubGeo, hubMat));
@@ -182,7 +182,7 @@ function updateHazards(dt) {
 
 // ---- themes: original palettes for sky, fog, water, deck, barriers and lights (the stock look is 'dusk')
 const THEMES = {
-  dusk:   { bg: [0.012, 0.04, 0.12], fog: [0.03, 0.075, 0.19], deep: [0.006, 0.026, 0.09], shal: [0.018, 0.10, 0.28], glint: [0.22, 0.42, 0.72], deck: 0xffffff, conc: 0xa3a8b6, pier: 0x5c6276, sun: [0xfff0da, 0.82], hemi: [0xdbeaff, 0x56607c, 0.27], rim: [0xcfe0ff, 0.34], css: '#0a1838' },
+  dusk:   { bg: [0.012, 0.04, 0.12], fog: [0.03, 0.075, 0.19], deep: [0.004, 0.022, 0.08], shal: [0.012, 0.08, 0.22], glint: [0.22, 0.42, 0.72], deck: 0xffffff, conc: 0xa3a8b6, pier: 0x5c6276, sun: [0xfff0da, 0.82], hemi: [0xdbeaff, 0x56607c, 0.27], rim: [0xcfe0ff, 0.34], css: '#0a1838' },
   day:    { bg: [0.22, 0.5, 0.92], fog: [0.42, 0.64, 0.94], deep: [0.01, 0.08, 0.30], shal: [0.04, 0.26, 0.62], glint: [0.7, 0.9, 1.0], deck: 0xffffff, conc: 0xb8bfcc, pier: 0x6a7286, sun: [0xffffff, 0.95], hemi: [0xe8f4ff, 0x7a8aa0, 0.42], rim: [0xffffff, 0.3], css: '#4a8ef0' },
   sunset: { bg: [0.50, 0.14, 0.22], fog: [0.80, 0.36, 0.30], deep: [0.08, 0.02, 0.10], shal: [0.40, 0.11, 0.22], glint: [1.0, 0.62, 0.35], deck: 0xffe2cc, conc: 0xc8a29a, pier: 0x6e4a58, sun: [0xffb070, 0.95], hemi: [0xffd2b0, 0x5a3044, 0.34], rim: [0xff9a7a, 0.42], css: '#8a2a3a' },
   neon:   { bg: [0.03, 0.0, 0.08], fog: [0.12, 0.02, 0.22], deep: [0.02, 0.0, 0.06], shal: [0.10, 0.0, 0.28], glint: [0.2, 1.0, 1.0], deck: 0xc4c0e0, conc: 0x8a80b0, pier: 0x3a2c5a, sun: [0xd8b8ff, 0.72], hemi: [0xb0a0ff, 0x30204a, 0.3], rim: [0x40f0ff, 0.6], css: '#12042a' },
@@ -196,6 +196,7 @@ function applyTheme(name) {
   const T = THEMES[name] || THEMES.dusk;
   scene.background.setRGB(...T.bg); scene.fog.color.setRGB(...T.fog);
   waterMat.uniforms.uDeep.value.setRGB(...T.deep); waterMat.uniforms.uShal.value.setRGB(...T.shal); waterMat.uniforms.uGlint.value.setRGB(...T.glint);
+  waterMat.uniforms.uRefH.value.setRGB(...T.fog.map(v => Math.min(1, v * 1.8))); waterMat.uniforms.uRefZ.value.setRGB(...T.deep.map(v => v * 1.2 + 0.004));
   TM.deck.color.setHex(T.deck); TM.conc.color.setHex(T.conc); TM.pier.color.setHex(T.pier);
   sun.color.setHex(T.sun[0]); sun.intensity = T.sun[1]; hemi.color.setHex(T.hemi[0]); hemi.groundColor.setHex(T.hemi[1]); hemi.intensity = T.hemi[2]; rim.color.setHex(T.rim[0]); rim.intensity = T.rim[1];
   stage.style.background = T.css;
@@ -348,15 +349,15 @@ let L = null, bossQ = [];
 """
 
 APPLY_LEVEL = r"""function applyLevel() {
-  L = getLevel(LI);
+  L = getLevel(LI); eTy.fill(0); eSlow.fill(0); frenzyT = shieldT = 0;
+  if (LV !== 1) { buildHazards([]); applyTheme('dusk'); return; }   // the original's stage 2 (Flood Rescue) is left as it is
   CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = L.cage.hp;
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
   W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0;
   const cw = WEAPONS[L.cage.weapon] || WEAPONS.laser, lc = lblCrate.ctx; lc.clearRect(0, 0, 640, 160);
   fancyText(lc, cw.label, 320, 80, cw.label.length > 8 ? 92 : 108, '#ffe23a', '#6a0a56', 22); lblCrate.tex.needsUpdate = true;
-  buildHazards();
+  buildHazards(L.hazards);
   applyTheme(L.theme);
-  $('hudL').textContent = L.name;
   try { const u = new URL(location.href); if (u.searchParams.get('level') !== String(LI + 1) && !location.hash) { u.searchParams.set('level', LI + 1); history.replaceState(null, '', u); } } catch (e) {}
 }
 function reset() {
@@ -370,7 +371,6 @@ HORDE_OLD = """  // horde
     eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = 1; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;
   }
   // gates on the belt: arrival time t -> distance REL*t
-  gates.length = 0;
   for (let j = 0; j < 49; j++) gates.push({ x: LANE_X, d: REL * (2.0 + 0.4 * j), val: 1, alive: true });
   for (let j = 0; j < 3; j++) gates.push({ x: LANE_X, d: REL * (23.0 + j * 1.1), val: 99, alive: true });
 """
@@ -391,13 +391,15 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- themes: expose the world materials and lights, make the water colours uniforms
     ("scene.add(new THREE.HemisphereLight(0xdbeaff, 0x56607c, 0.27));", "const hemi = new THREE.HemisphereLight(0xdbeaff, 0x56607c, 0.27); scene.add(hemi);", 1),
     ("let beltTex, waterMat;", "let beltTex, waterMat; const TM = {};", 1),
-    ("deck.position.set(0, 0, DKC); deck.receiveShadow = true; scene.add(deck);", "deck.position.set(0, 0, DKC); deck.receiveShadow = true; scene.add(deck); TM.deck = deckMat;", 1),
+    ("deck.position.set(0, 0, DKC); deck.receiveShadow = true; W1.add(deck);", "deck.position.set(0, 0, DKC); deck.receiveShadow = true; W1.add(deck); TM.deck = deckMat;", 1),
     ("  const prof = [[0, -0.25]", "  TM.conc = conc; TM.pier = pierM;\n  const prof = [[0, -0.25]", 1),
-    ("waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 } },",
-     "waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uDeep: { value: new THREE.Color(0.006, 0.026, 0.09) }, uShal: { value: new THREE.Color(0.018, 0.10, 0.28) }, uGlint: { value: new THREE.Color(0.22, 0.42, 0.72) } },", 1),
-    ("fragmentShader: `uniform float uT; varying vec3 vW;", "fragmentShader: `uniform float uT; uniform vec3 uDeep, uShal, uGlint; varying vec3 vW;", 1),
-    ("vec3 c = mix(vec3(0.006, 0.026, 0.09), vec3(0.018, 0.10, 0.28), smoothstep(0.25, 0.8, w));", "vec3 c = mix(uDeep, uShal, smoothstep(0.25, 0.8, w));", 1),
-    ("c += vec3(0.22, 0.42, 0.72) * g * 0.4;", "c += uGlint * g * 0.4;", 1),
+    ("waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uSun: { value: SUN_OFF.clone().normalize() } },",
+     "waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uSun: { value: SUN_OFF.clone().normalize() }, uDeep: { value: new THREE.Color(0.004, 0.022, 0.08) }, uShal: { value: new THREE.Color(0.012, 0.08, 0.22) }, "
+     "uGlint: { value: new THREE.Color(0.22, 0.42, 0.72) }, uRefH: { value: new THREE.Color(0.06, 0.14, 0.34) }, uRefZ: { value: new THREE.Color(0.01, 0.03, 0.1) } },", 1),
+    ("fragmentShader: `uniform float uT; uniform vec3 uSun; varying vec3 vW;", "fragmentShader: `uniform float uT; uniform vec3 uSun, uDeep, uShal, uGlint, uRefH, uRefZ; varying vec3 vW;", 1),
+    ("vec3 c = mix(vec3(0.004, 0.022, 0.08), vec3(0.012, 0.08, 0.22), smoothstep(0.3, 0.75, h0));", "vec3 c = mix(uDeep, uShal, smoothstep(0.3, 0.75, h0));", 1),
+    ("c = mix(c, mix(vec3(0.06, 0.14, 0.34), vec3(0.01, 0.03, 0.1), clamp(r.y, 0.0, 1.0)), fr);", "c = mix(c, mix(uRefH, uRefZ, clamp(r.y, 0.0, 1.0)), fr);", 1),
+    ("c += vec3(0.22, 0.42, 0.72) * smoothstep(0.66, 0.76, h0)", "c += uGlint * smoothstep(0.66, 0.76, h0)", 1),
     # ---- level data
     ("const CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", "let CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", 1),
     ("let E = 0;\n", "let E = 0;\nconst eTy = new Uint8Array(MAXE), eSlow = new Float32Array(MAXE);\n", 1),
@@ -414,8 +416,9 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("    if (!spawned1 && D >= 12.6) { spawned1 = true; spawnBoss(0, clamp(X, -4, 1.5), D + 26, true); }\n"
      "    if (!spawned2 && D >= 21.0) { spawned2 = true; spawnBoss(1, clamp(X, -4, 1.5), D + 26, true); }\n",
      "    for (const q of bossQ) if (!q.done && D >= q.at) { q.done = true; spawnBoss(q.kind, clamp(X + q.dx, -4, 1.5), D + q.ahead, true, q); }\n", 1),
-    ("if (!b.active) { if (D >= 29)", "if (!b.active) { if (D >= L.final.wakeAt)", 1),
-    ("clamp(D / 29, 0, 1)", "clamp(D / L.final.wakeAt, 0, 1)", 1),
+    ("if (!b.active) { if (LV === 1 ? D >= 29 : gt >= T_BOSS)", "if (!b.active) { if (LV === 1 ? D >= L.final.wakeAt : gt >= T_BOSS)", 1),
+    ("clamp(LV === 1 ? D / 29 : gt / T_BOSS, 0, 1)", "clamp(LV === 1 ? D / L.final.wakeAt : gt / T_BOSS, 0, 1)", 1),
+    ("$('hudL').textContent = 'STAGE ' + LV;", "$('hudL').textContent = LV === 1 ? L.name : 'FLOOD RESCUE';", 1),
     ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt);", 1),
     # ---- gates: any label, colour per kind, special effects
     ("c = g.val === 1 ? GLASS_B : GLASS_Y, gc = g.val === 1 ? GLOW_B : GLOW_Y", "c = g.glass, gc = g.glow", 1),
@@ -430,36 +433,34 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("addSoldiers(99, g.x - 0.6", "addSoldiers(g.val, g.x - 0.6", 1),
     ("popup('+99'", "popup(g.label", 1),
     # ---- weapons
-    ("const PSPEED = [36, 54, 36, 54], PWID = [0.34, 0.72, 0.7, 1.5], PLEN = [1.4, 5.0, 2.2, 6.4], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2];",
-     "const PSPEED = [36, 54, 36, 54, 44, 40, 24, 70, 30, 64, 46], PWID = [0.34, 0.72, 0.7, 1.5, 0.3, 0.42, 0.95, 0.5, 1.0, 0.4, 0.5], "
-     "PLEN = [1.4, 5.0, 2.2, 6.4, 1.8, 1.6, 1.3, 9.0, 1.1, 3.2, 1.6], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2, RANGE, RANGE - 2, RANGE + 2, RANGE + 8, 14, RANGE + 2, RANGE];", 1),
-    ("const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2]];",
-     "const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2], [1.3, 2.0, 0.15], [0.15, 1.5, 2.1], [2.3, 0.65, 0.08], [1.2, 1.7, 2.5], [2.5, 0.9, 0.05], [1.3, 0.8, 2.6], [1.5, 2.2, 2.5]];", 1),
+    ("const PSPEED = [36, 54, 36, 54, 48, 48], PWID = [0.34, 0.72, 0.7, 1.5, 0.62, 1.3], PLEN = [1.4, 5.0, 2.2, 6.4, 3.6, 5.2], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2, RANGE, RANGE + 2];",
+     "const PSPEED = [36, 54, 36, 54, 48, 48, 44, 40, 24, 70, 30, 64, 46], PWID = [0.34, 0.72, 0.7, 1.5, 0.62, 1.3, 0.3, 0.42, 0.95, 0.5, 1.0, 0.4, 0.5], "
+     "PLEN = [1.4, 5.0, 2.2, 6.4, 3.6, 5.2, 1.8, 1.6, 1.3, 9.0, 1.1, 3.2, 1.6], PRANGE = [RANGE, RANGE, RANGE + 2, RANGE + 2, RANGE, RANGE + 2, RANGE, RANGE - 2, RANGE + 2, RANGE + 8, 14, RANGE + 2, RANGE];", 1),
+    ("const PDMG = [1, 2.5, 5, 12.5, 2.5, 12.5], HEROT = [0, 0, 1, 1, 0, 1];",
+     "const PDMG = [1, 2.5, 5, 12.5, 2.5, 12.5, 1.2, 1.0, 5, 7, 1.2, 2.8, 1.6], HEROT = [0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0];", 1),
+    ("const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2], [0.3, 1.2, 2.0], [0.45, 1.4, 2.1]];",
+     "const PCOL = [[1.9, 0.95, 0.05], [1.75, 0.045, 1.02], [2.0, 1.15, 0.1], [1.9, 0.08, 1.2], [0.3, 1.2, 2.0], [0.45, 1.4, 2.1], [1.3, 2.0, 0.15], [0.15, 1.5, 2.1], [2.3, 0.65, 0.08], [1.2, 1.7, 2.5], [2.5, 0.9, 0.05], [1.3, 0.8, 2.6], [1.5, 2.2, 2.5]];", 1),
     ("function fire(x, d, type) {", "function fire(x, d, type, ang = 0) {", 1),
-    ("if (nCh > 0 && type < 2)", "if (nCh > 0 && type !== 2 && type !== 3)", 1),
     ("  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;",
      "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
-    ("pDmg[P] = type === 0 ? 1 : type === 1 ? 2.5 : type === 2 ? 5 : 12.5;", "pDmg[P] = PDMG[type];", 1),
-    ("sCd[i] += FIRE_INT; sKick[i] = 1; fire(sX[i] + 0.31, sD[i] + 0.95, atk ? 1 : 0);",
-     "sCd[i] += W.int * (frenzyT > 0 ? 0.5 : 1); sKick[i] = 1; for (let k = 0; k < W.shots; k++) fire(sX[i] + 0.31, sD[i] + 0.95, W.type, (k - (W.shots - 1) / 2) * W.fan);", 1),
-    ("const pw = (ty >= 2 ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
+    ("sCd[i] += FIRE_T; sKick[i] = 1; fire(sX[i] + mzX, sD[i] + mzD, sType);",
+     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * (frenzyT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
+    ("const pw = (HEROT[ty] ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
     ("    if (!dead) for (const b of bosses) {",
      "    if (!dead) for (const h of hazards) if (h.type === 'barrel' && h.hp > 0 && Math.abs(x - h.x) < 0.45 + pw * 0.5 && d1 >= h.d - 0.45 && d0 <= h.d + 0.45) { h.hp -= dmg; dead = true; if (h.hp <= 0) blowBarrel(h); break; }\n"
      "    if (!dead) for (const b of bosses) {", 1),
     ("if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { hitBoss(b, dmg, x); dead = true; break; }",
-     "if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { if (PFX[ty] === 2) b.slowT = 1.5; hitBoss(b, dmg, x); dead = true; break; }", 1),
+     "if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { if (PFX[ty] === 2) b.frost = Math.min(1, b.frost + 0.12); hitBoss(b, dmg, x); dead = true; break; }", 1),
     ("          const h = eHp[j]; eHp[j] -= dmg; dmg -= h;",
      "          if (PSPL[ty]) { splash(eX[j], eD[j], PSPL[ty], dmg); dead = true; break scan; }\n"
      "          if (PFX[ty] === 1) { chain(j, dmg); dead = true; break scan; }\n"
      "          if (PFX[ty] === 3) { eHp[j] -= dmg; if (eHp[j] <= 0) killEnemy(j, Math.random() < 0.6); continue; }\n"
      "          if (PFX[ty] === 2) eSlow[j] = 2.5;\n"
      "          const h = eHp[j]; eHp[j] -= dmg; dmg -= h;", 1),
-    ("pa[o + 13] = t >= 2 ? 2.4 : 0.84;", "pa[o + 13] = (t === 2 || t === 3) ? 2.4 : 0.84;", 1),
     ("  atk = true; setSoldierLook(true); fovK = 1;\n  popup('ATK+150%', clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);",
      "  setWeapon(L.cage.weapon); fovK = 1;", 1),
     # ---- bosses: freeze slows them, a shield blocks a regular smash (not the final boss's slam)
-    ("if (b.d - td >= 0.5) b.d -= b.speed * dt;", "if (b.slowT > 0) b.slowT -= dt;\n      if (b.d - td >= 0.5) b.d -= b.speed * (b.slowT > 0 ? 0.45 : 1) * dt;", 1),
     ("  b.smashA = 1; sfx.smash(); shake = Math.max(shake, 0.45);",
      "  b.smashA = 1; sfx.smash(); shake = Math.max(shake, 0.45);\n"
      "  if (shieldT > 0) { ring(X, D, 0.5, hw + 3, 0.4, 0x60e0ff); popup('BLOCKED', X, 3.2, D + hd, '#a8f4ff', '#003a50', 1.8, 0.7, 2); return; }", 1),
@@ -482,13 +483,13 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("ec[ne * 3] = tint; ec[ne * 3 + 1] = tint * 0.92; ec[ne * 3 + 2] = tint * 0.92;",
      "ec[ne * 3] = tint * ct[0]; ec[ne * 3 + 1] = tint * 0.92 * ct[1]; ec[ne * 3 + 2] = tint * 0.92 * ct[2];", 1),
     # ---- endless progression + stars
-    ("'PLAY AGAIN', N >= 300 ? 3 : N >= 150 ? 2 : 1", "'NEXT STAGE', N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1", 1),
-    ("function startGame() {\n  initAudio(); reset();",
-     "function startGame(advance) {\n  if (advance && state === 'won') LI++;\n  initAudio(); reset();", 1),
-    ("startGame(); return; }", "startGame(true); return; }", 1),
-    ("state !== 'play') startGame();", "state !== 'play') startGame(true);", 1),
-    ("get s() { return { state,",
-     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), state,", 1),
+    ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1)", 1),
+    # a win on the bridge moves on to the next kit level; the original's stage 2 stays in its stage menu
+    ("function primary() { if (state === 'won' && LV === 1) startLevel(2); else startGame(); }",
+     "function primary() { if (state === 'won' && LV === 1) LI++; startGame(); }", 1),
+    ("<b>THE BRIDGE</b><span>GATES &middot; CAGE &middot; LASERS</span>", "<b>THE BRIDGE</b><span>ENDLESS &middot; 9 WEAPONS</span>", 1),
+    ("get s() { return { LV,",
+     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
     (".map(g => ({ d: g.d, val: g.val }))", ".map(g => ({ d: g.d, val: g.val, kind: g.kind, label: g.label }))", 1),
     # ---- levels.js loads before the game
     ("<script>\n(function(){\n  var fill=", "<script src=\"levels.js\"></script>\n<script>\n(function(){\n  var fill=", 1),

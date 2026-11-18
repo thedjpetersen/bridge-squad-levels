@@ -27,6 +27,10 @@ python3 -m http.server 8731     # then open http://127.0.0.1:8731/?level=1
 | **Themes** | Eight original looks for sky, water, deck and lighting: dusk (stock), day, sunset, neon, toxic, frost, desert and storm. Each archetype has a default, and any level can set `theme:`. |
 | **Hazards** | **Saw blades** sweep across the belt or the deck at a fixed point. **Explosive barrels** sit in the horde: shoot one to blast everything around it. |
 
+## Tracking the original
+
+noclipepe's game changes over time. In November 2026 it gained a second stage, Flood Rescue, with a stage menu and reworked code. The kit drives the bridge stage (stage 1) and leaves Flood Rescue as it is; a win on the bridge moves on to the next kit level. When the original changes again, `setup.sh` fails and names the patch anchor that no longer matches, and the web page tells players and links to the original.
+
 ## Putting it on a website
 
 `web/index.html` is a page that fetches the original game from noclipepe's site, applies `patches.json` in the browser and runs it. The original is never rehosted. If the original changes so the patches no longer fit, the page says so and links to it.
