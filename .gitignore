@@ -1,9 +1,9 @@
 original/
-index.html
-three.min.js
+/index.html
+/three.min.js
 node_modules/
 .DS_Store
-patches.json
+/patches.json
 web/patches.json
 web/levels.js
 web/cover.*
