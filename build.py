@@ -54,6 +54,8 @@ const GATE_STYLE = {
   w:   { glass: [0.02, 0.8, 0.45],  glow: [0.05, 1.0, 0.5],  edge: '#04664a' },
   f:   { glass: [1.0, 0.3, 0.0],    glow: [1.0, 0.35, 0.0],  edge: '#902800' },
   s:   { glass: [0.1, 0.85, 1.0],   glow: [0.15, 0.9, 1.0],  edge: '#005c78' },
+  r:   { glass: [0.35, 0.95, 0.05], glow: [0.4, 1.0, 0.1],   edge: '#2a6a00' },
+  d:   { glass: [0.95, 0.15, 0.55], glow: [1.0, 0.2, 0.6],   edge: '#7a0040' },
 };
 const gateMeshes = new Map();
 function gateTex(text, edge) {
@@ -75,11 +77,25 @@ function gateMeshFor(label, edge) {
 }
 function makeGate(spec, t) {
   const v = spec.val || 1, op = spec.op || '+';
-  const kind = spec.weapon ? 'w' : spec.buff === 'frenzy' ? 'f' : spec.buff === 'shield' ? 's' : op === 'x' ? 'x' : op === '-' ? '-' : op === '/' ? '/' : '';
+  const kind = spec.weapon ? 'w' : spec.buff === 'frenzy' ? 'f' : spec.buff === 'shield' ? 's' : spec.buff === 'rate' ? 'r' : spec.buff === 'dmg' ? 'd' : op === 'x' ? 'x' : op === '-' ? '-' : op === '/' ? '/' : '';
   const style = GATE_STYLE[kind || (v < 10 ? 'add' : 'big')];
-  const label = kind === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : kind === 'f' ? 'FRENZY' : kind === 's' ? 'SHIELD'
+  const label = kind === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : kind === 'f' ? 'FRENZY' : kind === 's' ? 'SHIELD' : kind === 'r' ? 'FIRE+25%' : kind === 'd' ? 'DMG+25%'
     : kind === 'x' ? '×' + v : kind === '-' ? '−' + v : kind === '/' ? '÷' + v : '+' + v;
-  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true };
+  const shoot = !!spec.shoot && (kind === '' || kind === '-');   // shootable gates count up while you shoot them
+  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true,
+    shoot, sv: kind === '-' ? -v : v, step: spec.step || 6, cap: spec.cap != null ? spec.cap : (kind === '-' ? 3 : v + 5), charge: 0 };
+}
+function shootGate(g, dmg, x) { // every `step` damage raises the gate by one; a red trap can be shot up into a blue gate
+  g.charge += dmg;
+  if (PT < MAXPT - 300 && Math.random() < 0.3) burst(x, 1.1, g.d, 1, 3, 1.4, 1.8, 2.4, 0.5, 0.15);
+  let changed = false;
+  while (g.charge >= g.step && g.sv < g.cap) { g.charge -= g.step; g.sv++; changed = true; }
+  if (g.sv >= g.cap) g.charge = 0;
+  if (!changed) return;
+  const style = GATE_STYLE[g.sv < 0 ? '-' : g.sv < 10 ? 'add' : 'big'];
+  g.kind = g.sv < 0 ? '-' : ''; g.val = Math.abs(g.sv); g.label = g.sv < 0 ? '−' + -g.sv : '+' + g.sv;
+  g.glass = style.glass; g.glow = style.glow; g.mesh = gateMeshFor(g.label, style.edge);
+  if (thr('gateUp', 60)) tone('square', 640 + g.sv * 30, 900 + g.sv * 30, 0.05, 0.03);
 }
 function setWeapon(name) {
   wName = WEAPONS[name] ? name : 'laser'; W = WEAPONS[wName];
@@ -105,6 +121,10 @@ function gateSpecial(g) {
   } else if (g.kind === 'f') {
     frenzyT = g.secs; sfx.power(); popup('FRENZY! x2 FIRE', clamp(X, -2, 2), 3.4, D + 2, '#ffb020', '#4a1500', 2.4, 1.4, 1.4);
     burst(X, 0.8, D, 50, 9, 2.4, 1.0, 0.1, 1.1, 0.5, -4, 3); ring(X, D, 0.5, 6.5, 0.5, 0xff7a10);
+  } else if (g.kind === 'r') {
+    rateMul *= 0.8; sfx.power(); popup('FIRE RATE +25%', clamp(X, -2, 2), 3.4, D + 2, '#d8ff80', '#1f4a00', 2.3, 1.3, 1.4); ring(X, D, 0.5, 6.5, 0.5, 0x9aff30);
+  } else if (g.kind === 'd') {
+    dmgMul *= 1.25; sfx.power(); popup('DAMAGE +25%', clamp(X, -2, 2), 3.4, D + 2, '#ffb0e0', '#5a0030', 2.3, 1.3, 1.4); ring(X, D, 0.5, 6.5, 0.5, 0xff40a0);
   } else if (g.kind === 's') {
     shieldT = g.secs; sfx.power(); popup('SHIELD ' + g.secs + 's', clamp(X, -2, 2), 3.4, D + 2, '#a8f4ff', '#003a50', 2.4, 1.4, 1.4);
     ring(X, D, 0.5, 7, 0.5, 0x60e0ff);
@@ -228,7 +248,7 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
   const w = [], times = [];
   for (const g of Lv.gates) {
     if (g.weapon && !WEAPONS[g.weapon]) w.push('unknown weapon "' + g.weapon + '" (have: ' + Object.keys(WEAPONS) + ')');
-    if (g.buff && g.buff !== 'frenzy' && g.buff !== 'shield') w.push('unknown buff "' + g.buff + '" (have: frenzy, shield)');
+    if (g.buff && !['frenzy', 'shield', 'rate', 'dmg'].includes(g.buff)) w.push('unknown buff "' + g.buff + '" (have: frenzy, shield, rate, dmg)');
     if (g.op && !['+', '-', 'x', '/'].includes(g.op)) w.push('unknown gate op "' + g.op + '" (have: + - x /)');
     if (!g.weapon && !g.buff && !(g.val >= 1)) w.push('gate values must be >= 1 (use op: "-" for minus gates)');
     for (let j = 0; j < g.count; j++) times.push(g.t + g.every * j);
@@ -258,8 +278,8 @@ const ARCHETYPES = [ // [id, HUD name, first level it can appear on]
   ['boom', 'BOOM', 5], ['siege', 'SIEGE', 6], ['bossrush', 'BOSS RUSH', 8], ['frost', 'FROST', 11],
 ];
 const WEAPON_UNLOCK = { laser: 1, rapid: 3, spread: 4, rocket: 5, flame: 6, rail: 7, shock: 9, freeze: 11 };
-function generateLevel(n) {
-  const R = rng(n * 9973 + 17), pick = a => a[Math.floor(R() * a.length)], k = Math.min(1, (n - 1) / 30); // k: difficulty 0..1 over 30 levels
+function generateLevel(n, seed) {
+  const R = rng(seed || n * 9973 + 17), pick = a => a[Math.floor(R() * a.length)], k = Math.min(1, (n - 1) / 30); // k: difficulty 0..1 over 30 levels
   const archs = ARCHETYPES.filter(a => a[2] <= n), arch = n < 2 ? ARCHETYPES[0] : pick(archs), A = arch[0];
   const unlocked = Object.keys(WEAPON_UNLOCK).filter(w => WEAPON_UNLOCK[w] <= n), finisher = unlocked.filter(w => w !== 'freeze' && w !== 'flame');   // short-range/utility weapons are poor against the final boss
   const wakeAt = Math.round(29 + k * 9), tWake = wakeAt / V_SQUAD;
@@ -285,6 +305,12 @@ function generateLevel(n) {
   }
   if (A === 'arsenal' || A === 'bossrush' || (n >= 6 && R() < 0.35)) { const s = at(0.9); s.buff = 'frenzy'; s.secs = 6; }
   if (A === 'saws' || A === 'bossrush' || (n >= 5 && R() < 0.3)) { const s = at(0.25 + R() * 0.3); s.buff = 'shield'; s.secs = 5; }
+  let dpsMul = 1;   // stat gates make the squad hit harder, so the boss gets tougher to match
+  if (n >= 3) for (let i = 0; i < 1 + (n >= 10 ? 1 : 0); i++) { const s = at(0.3 + R() * 0.55); if (s.t != null) { s.buff = R() < 0.5 ? 'rate' : 'dmg'; dpsMul *= 1.25; } }
+  if (n >= 4) for (const s of slots) { // shootable gates: from level 4 traps can be shot up, from level 6 some +gates too
+    if (s.op === '-' || s.op === '/') { if (s.op === '-') { s.shoot = true; s.step = Math.min(12, Math.round(3 + n * 0.25)); s.cap = 2 + Math.floor(R() * 5); } }
+    else if (n >= 6 && !s.op && !s.weapon && !s.buff && R() < 0.18) { s.shoot = true; s.step = 6 + Math.floor(n / 5); s.cap = s.val + 3 + Math.floor(R() * 4); }
+  }
   const bigN = 2 + Math.floor(R() * 3), bigV = pick([50, 99]), bigE = 1.0 + R() * 0.2;
   for (let i = 0; i < bigN; i++) slots.push({ t: +(bigT + i * bigE).toFixed(2), val: bigV });
   // expected squad if every gate is taken (traps included); sizes traps, the boss and the stars
@@ -328,8 +354,82 @@ function generateLevel(n) {
   for (let i = 0; i < nb; i++) { const kind = i % 2; bosses.push({ kind, at: +(14 + (wakeAt - 21) * (nb > 1 ? i / (nb - 1) : 0)).toFixed(1), ahead: 24 + Math.floor(R() * 3), hp: Math.round((kind ? 1200 : 520) * (i === 0 ? 1 : 1 + k * 0.7) * (A === 'bossrush' ? 0.85 : 1)) }); }   // the first one stays at stock strength
   const soak = (3.4 + k * 0.9) * (frenzyLate ? 1.3 : 1);   // seconds of full-squad fire the final boss soaks
   return { name: 'STAGE ' + n + (arch[1] ? ' · ' + arch[1] : ''), archetype: A, theme: A === 'classic' ? pick(['dusk', 'day']) : ARCH_THEME[A], generated: true, gates: slots, horde, cage, bosses, hazards,
-    final: { hp: Math.max(4000, Math.round(ex * 0.85 * WEAPONS[wpn].dps * soak / 100) * 100), wakeAt }, stars: [Math.round(ex * 0.45), Math.round(ex * 0.8)] };
+    final: { hp: Math.max(4000, Math.round(ex * 0.85 * WEAPONS[wpn].dps * dpsMul * soak / 100) * 100), wakeAt }, stars: [Math.round(ex * 0.45), Math.round(ex * 0.8)] };
 }
+
+// ---- progress, coins and upgrades (kept in this browser), the daily level and sharing
+const KIT_KEY = 'bridge-squad-kit-v1';
+const SAVE = (() => {
+  let s = null; try { s = JSON.parse(localStorage.getItem(KIT_KEY)); } catch (e) {}
+  s = s && typeof s === 'object' ? s : {};
+  return { max: s.max | 0, coins: s.coins | 0, stars: s.stars || {}, daily: s.daily || {}, up: Object.assign({ squad: 0, rate: 0, dmg: 0, cage: 0, hero: 0 }, s.up) };
+})();
+function persist() { try { localStorage.setItem(KIT_KEY, JSON.stringify(SAVE)); } catch (e) {} }
+const UPGRADES = [
+  { id: 'squad', name: 'BIGGER SQUAD', desc: lv => '+' + lv * 2 + ' soldiers at the start', max: 5 },
+  { id: 'rate', name: 'FASTER FIRE', desc: lv => '+' + lv * 5 + '% fire rate', max: 5 },
+  { id: 'dmg', name: 'HARDER HITS', desc: lv => '+' + lv * 6 + '% damage', max: 5 },
+  { id: 'cage', name: 'BOLT CUTTERS', desc: lv => '−' + lv * 8 + '% cage health', max: 5 },
+  { id: 'hero', name: 'HERO TRAINING', desc: lv => '+' + lv * 20 + '% hero damage', max: 5 },
+];
+const upCost = lv => 40 + lv * 40;
+let rateMul = 1;
+function kitApplyUpgrades() { const u = SAVE.up; if (u.squad) addSoldiers(u.squad * 2, X, -0.5, 0.7); dmgMul = 1 + u.dmg * 0.06; heroMul = 1 + u.hero * 0.2; rateMul = 1 / (1 + u.rate * 0.05); }
+const DAY = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000), DAILY_I = 1e6 + DAY, isDaily = i => i >= 1e6;
+const DAY_LABEL = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+function kitWin(st) {
+  const daily = isDaily(LI), gain = 10 + st * 10 + Math.floor(kills / 40) + (daily ? 40 : 0);
+  SAVE.coins += gain;
+  if (daily) SAVE.daily[DAY] = Math.max(SAVE.daily[DAY] | 0, st);
+  else { SAVE.stars[LI] = Math.max(SAVE.stars[LI] | 0, st); SAVE.max = Math.max(SAVE.max, LI + 1); }
+  persist(); kitUI();
+  return '<div class="chip">COINS<b>+' + gain + '</b></div>';
+}
+function kitLose() { const gain = Math.floor(kills / 60); if (gain) { SAVE.coins += gain; persist(); kitUI(); } }
+function kitNext() { return isDaily(LI) ? SAVE.max : LI + 1; }
+function kitToast(t) { const e = $('kitt'); e.textContent = t; e.classList.add('show'); clearTimeout(kitToast.t); kitToast.t = setTimeout(() => e.classList.remove('show'), 1800); }
+async function kitShare() {
+  const daily = isDaily(LI), url = location.origin + location.pathname + (daily ? '?daily=1' : '?level=' + (LI + 1));
+  const st = daily ? SAVE.daily[DAY] | 0 : SAVE.stars[LI] | 0, won = state === 'won';
+  const text = (won ? 'I beat ' + L.name + ' in Bridge Squad: Endless with ' + N + ' soldiers ' + '★'.repeat(st) + '☆'.repeat(3 - st) : 'Can you beat ' + L.name + ' in Bridge Squad: Endless?');
+  try { if (navigator.share) { await navigator.share({ title: 'Bridge Squad: Endless', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text + ' ' + url); kitToast('LINK COPIED'); } catch (e) { kitToast(url); }
+}
+function kitUI() {
+  const c = $('coins'); if (c) c.textContent = SAVE.coins;
+  const d = $('kDaily'); if (d) d.innerHTML = 'DAILY · ' + DAY_LABEL + (SAVE.daily[DAY] ? ' <u>' + '★'.repeat(SAVE.daily[DAY]) + '</u>' : '');
+  const lv = $('kLevels'); if (lv) lv.textContent = 'LEVELS';
+}
+function kitPanel(html) { const p = $('kitp'); p.innerHTML = html ? '<div class="kpi">' + html + '<button class="kb kclose">CLOSE</button></div>' : ''; p.classList.toggle('show', !!html); }
+function kitLevels() {
+  const n = Math.max(SAVE.max + 1, 12), cells = [];
+  for (let i = 0; i < n; i++) {
+    const open = i <= SAVE.max, st = SAVE.stars[i] | 0, tag = open ? (getLevel(i).name.split(' · ')[1] || (i < HAND_LEVELS.length ? 'HANDMADE' : 'CLASSIC')) : 'LOCKED';
+    cells.push('<button class="kl' + (open ? '' : ' lock') + (i === LI ? ' cur' : '') + '" data-i="' + i + '"' + (open ? '' : ' disabled') + '><b>' + (i + 1) + '</b><i>' + tag + '</i><u>' + '★'.repeat(st) + '<s>' + '★'.repeat(3 - st) + '</s></u></button>');
+  }
+  kitPanel('<h3>LEVELS</h3><div class="kgrid">' + cells.join('') + '</div>');
+}
+function kitShop() {
+  const rows = UPGRADES.map(u => {
+    const lv = SAVE.up[u.id], cost = upCost(lv), maxed = lv >= u.max;
+    return '<div class="ku"><div><b>' + u.name + '</b><span>' + (lv ? u.desc(lv) : 'Not upgraded yet') + (maxed ? '' : ' → ' + u.desc(lv + 1)) + '</span><em>' + '■'.repeat(lv) + '<s>' + '■'.repeat(u.max - lv) + '</s></em></div>'
+      + '<button class="kb kbuy" data-u="' + u.id + '"' + (maxed || SAVE.coins < cost ? ' disabled' : '') + '>' + (maxed ? 'MAX' : '<i class="kcoin"></i>' + cost) + '</button></div>';
+  }).join('');
+  kitPanel('<h3>UPGRADES</h3><p class="kcoins"><i class="kcoin"></i><b>' + SAVE.coins + '</b> coins · win levels to earn more</p>' + rows);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.id === 'kLevels') kitLevels();
+  else if (t.id === 'kShop') kitShop();
+  else if (t.id === 'kShare') kitShare();
+  else if (t.id === 'kDaily') { kitPanel(''); LV = 1; LI = DAILY_I; startGame(); }
+  else if (t.classList.contains('kclose')) kitPanel('');
+  else if (t.classList.contains('kl')) { kitPanel(''); LV = 1; LI = +t.dataset.i; startGame(); }
+  else if (t.classList.contains('kbuy')) {
+    const u = UPGRADES.find(q => q.id === t.dataset.u), lv = SAVE.up[u.id], cost = upCost(lv);
+    if (lv < u.max && SAVE.coins >= cost) { SAVE.coins -= cost; SAVE.up[u.id] = lv + 1; persist(); initAudio(); sfx.power(); kitShop(); kitUI(); }
+  }
+});
 const HAND_LEVELS = (() => {
   try { const m = location.hash.match(/lvl=([^&]+)/); if (m) return [JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')))))]; } catch (e) { console.warn('bad #lvl= level', e); }
   return (window.BRIDGE_LEVELS && window.BRIDGE_LEVELS.length) ? window.BRIDGE_LEVELS : [STOCK_LEVEL];
@@ -337,28 +437,31 @@ const HAND_LEVELS = (() => {
 const levelCache = [];
 function getLevel(i) {
   if (!levelCache[i]) {
-    const lv = normLevel(i < HAND_LEVELS.length ? HAND_LEVELS[i] : generateLevel(i + 1), i);
+    const lv = isDaily(i) ? Object.assign(normLevel(generateLevel(12 + (i % 23), i * 7919 + 3), 0), {}) : normLevel(i < HAND_LEVELS.length ? HAND_LEVELS[i] : generateLevel(i + 1), i);
+    if (isDaily(i)) lv.name = 'DAILY · ' + DAY_LABEL;
     checkLevel(lv).forEach(m => console.warn('[level ' + (i + 1) + ' ' + lv.name + '] ' + m));
     levelCache[i] = lv;
   }
   return levelCache[i];
 }
 window.__bridgeLevel = i => getLevel(i - 1);   // inspect any level from the console: __bridgeLevel(12)
-let LI = Math.max(0, (parseInt(new URLSearchParams(location.search).get('level'), 10) || 1) - 1);
+const QS = new URLSearchParams(location.search);   // ?level=N, ?daily=1, or else the furthest level reached
+let LI = QS.has('daily') ? DAILY_I : QS.get('level') ? Math.max(0, (parseInt(QS.get('level'), 10) || 1) - 1) : SAVE.max;
 let L = null, bossQ = [];
+kitUI();
 """
 
 APPLY_LEVEL = r"""function applyLevel() {
   L = getLevel(LI); eTy.fill(0); eSlow.fill(0); frenzyT = shieldT = 0;
   if (LV !== 1) { buildHazards([]); applyTheme('dusk'); return; }   // the original's stage 2 (Flood Rescue) is left as it is
-  CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = L.cage.hp;
+  CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = Math.max(5, Math.round(L.cage.hp * (1 - SAVE.up.cage * 0.08)));
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
   W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0;
   const cw = WEAPONS[L.cage.weapon] || WEAPONS.laser, lc = lblCrate.ctx; lc.clearRect(0, 0, 640, 160);
   fancyText(lc, cw.label, 320, 80, cw.label.length > 8 ? 92 : 108, '#ffe23a', '#6a0a56', 22); lblCrate.tex.needsUpdate = true;
   buildHazards(L.hazards);
   applyTheme(L.theme);
-  try { const u = new URL(location.href); if (u.searchParams.get('level') !== String(LI + 1) && !location.hash) { u.searchParams.set('level', LI + 1); history.replaceState(null, '', u); } } catch (e) {}
+  try { const u = new URL(location.href); if (!location.hash) { if (isDaily(LI)) { u.searchParams.delete('level'); u.searchParams.set('daily', '1'); } else { u.searchParams.delete('daily'); u.searchParams.set('level', LI + 1); } if (u.href !== location.href) history.replaceState(null, '', u); } } catch (e) {}
 }
 function reset() {
   applyLevel();
@@ -386,6 +489,31 @@ HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room aroun
   for (const g of L.gates) for (let j = 0; j < g.count; j++) gates.push(makeGate(g, g.t + g.every * j));
   gates.sort((a, b) => a.d - b.d);
 """
+
+KIT_CSS = r'''
+  #kit{display:none;gap:.4em;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:.9em;max-width:94%}
+  #ov.menu #kit,#ov.end #kit{display:flex}
+  #kShare{display:none}#ov.end #kShare{display:inline-block}
+  .kb{font:inherit;font-size:.9em;color:#fff;cursor:pointer;border:.13em solid rgba(255,255,255,.9);border-radius:.7em;padding:.38em .75em;background:linear-gradient(180deg,rgba(255,178,40,.96),rgba(214,96,0,.96));box-shadow:0 .18em 0 rgba(90,30,0,.9);letter-spacing:.04em;text-shadow:0 .06em 0 rgba(90,30,0,.8)}
+  .kb:disabled{opacity:.45;cursor:default}.kb u{text-decoration:none;color:#fff3a0}
+  #kitc{display:flex;align-items:center;padding:.3em .7em;border-radius:.9em;background:rgba(0,0,0,.35);border:.12em solid rgba(255,255,255,.6);font-size:.95em;color:#ffe14a}
+  .kcoin{display:inline-block;width:.9em;height:.9em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6b0,#ffc21a 55%,#b86a00);box-shadow:0 0 0 .08em #7a4400;vertical-align:-.1em;margin-right:.3em}
+  #kitp{position:absolute;inset:0;z-index:8;display:none;align-items:center;justify-content:center;background:rgba(4,10,30,.8);cursor:default}
+  #kitp.show{display:flex}
+  .kpi{width:88%;max-height:84%;overflow:auto;padding:1em;border-radius:1em;background:linear-gradient(180deg,#1d3a8a,#0d1d52);border:.14em solid #fff;box-shadow:0 .3em 0 rgba(0,0,0,.5);text-align:center;color:#fff}
+  .kpi h3{margin:.1em 0 .6em;font-size:1.6em;letter-spacing:.06em}
+  .kgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:.45em;margin-bottom:.8em}
+  .kl{font:inherit;color:#fff;cursor:pointer;border:.12em solid rgba(255,255,255,.8);border-radius:.7em;padding:.4em .2em;background:linear-gradient(180deg,#3d7bff,#1640b0)}
+  .kl.cur{border-color:#ffe14a;box-shadow:0 0 0 .1em #ffe14a}.kl.lock{opacity:.4;cursor:default;background:#2a3358}
+  .kl b{display:block;font-size:1.3em}.kl i{display:block;font-style:normal;font-size:.5em;letter-spacing:.04em;color:#cfe6ff;font-family:Arial,sans-serif;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kl u{display:block;text-decoration:none;color:#ffd21f;font-size:.8em}.kl u s,.ku em s{text-decoration:none;color:rgba(255,255,255,.25)}
+  .ku{display:flex;align-items:center;gap:.6em;text-align:left;padding:.5em;margin-bottom:.45em;border-radius:.7em;background:rgba(0,0,0,.25)}
+  .ku>div{flex:1}.ku b{display:block;font-size:1em}.ku span{display:block;font:700 .62em Arial,sans-serif;color:#cfe6ff}.ku em{display:block;font-style:normal;color:#ffd21f;font-size:.7em;letter-spacing:.1em}
+  .kcoins{font:700 .8em Arial,sans-serif;margin:-.2em 0 .8em}
+  #kitt{position:absolute;left:50%;bottom:10%;transform:translateX(-50%);z-index:9;padding:.4em .9em;border-radius:.8em;background:rgba(0,0,0,.8);color:#fff;font-size:.9em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+  #kitt.show{opacity:1}
+  body.clean #kit{display:none!important}
+'''
 
 PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- themes: expose the world materials and lights, make the water colours uniforms
@@ -445,9 +573,10 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
     ("sCd[i] += FIRE_T; sKick[i] = 1; fire(sX[i] + mzX, sD[i] + mzD, sType);",
-     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * (frenzyT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
+     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
     ("const pw = (HEROT[ty] ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
     ("    if (!dead) for (const b of bosses) {",
+     "    if (!dead && LV === 1) for (const g of gates) if (g.alive && g.shoot && g.sv < g.cap && d1 >= g.d - 0.35 && d0 <= g.d + 0.35 && Math.abs(x - g.x) < GATE_HW) { shootGate(g, dmg, x); dead = true; break; }\n"
      "    if (!dead) for (const h of hazards) if (h.type === 'barrel' && h.hp > 0 && Math.abs(x - h.x) < 0.45 + pw * 0.5 && d1 >= h.d - 0.45 && d0 <= h.d + 0.45) { h.hp -= dmg; dead = true; if (h.hp <= 0) blowBarrel(h); break; }\n"
      "    if (!dead) for (const b of bosses) {", 1),
     ("if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { hitBoss(b, dmg, x); dead = true; break; }",
@@ -482,11 +611,22 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "fc[nfar * 3] = tint * ct[0]; fc[nfar * 3 + 1] = tint * 0.92 * ct[1]; fc[nfar * 3 + 2] = tint * 0.92 * ct[2];", 1),
     ("ec[ne * 3] = tint; ec[ne * 3 + 1] = tint * 0.92; ec[ne * 3 + 2] = tint * 0.92;",
      "ec[ne * 3] = tint * ct[0]; ec[ne * 3 + 1] = tint * 0.92 * ct[1]; ec[ne * 3 + 2] = tint * 0.92 * ct[2];", 1),
+    # ---- progress, coins, upgrades, daily, share: markup, styles, input and hooks
+    ('<button id="ovm">STAGES</button>',
+     '<button id="ovm">STAGES</button>\n    <div id="kit"><div id="kitc"><i class="kcoin"></i><b id="coins">0</b></div><button class="kb" id="kLevels">LEVELS</button><button class="kb" id="kShop">UPGRADES</button><button class="kb" id="kDaily">DAILY</button><button class="kb" id="kShare">SHARE</button></div>\n    <div id="kitp"></div><div id="kitt"></div>', 1),
+    ("</style>", KIT_CSS + "</style>", 1),
+    ("if (e.target.closest('.ib') || e.target.id === 'unhide') return;",
+     "if (e.target.closest('.ib') || e.target.closest('#kit') || e.target.closest('#kitp') || e.target.id === 'unhide') return;", 1),
+    ("  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;", "  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;\n  if (LV === 1) kitApplyUpgrades();", 1),
+    ("saveBest(st);", "saveBest(st); const kitChip = LV === 1 ? kitWin(st) : '';", 1),
+    ("'</b></div></div>', LV === 1 ? 'NEXT STAGE'", "'</b></div>' + kitChip + '</div>', LV === 1 ? 'NEXT STAGE'", 1),
+    ("} else showOverlay('DEFEATED', 'lose',", "} else { if (LV === 1) kitLose(); showOverlay('DEFEATED', 'lose',", 1),
+    ("'RETRY');", "'RETRY'); }", 1),
     # ---- endless progression + stars
     ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1)", 1),
     # a win on the bridge moves on to the next kit level; the original's stage 2 stays in its stage menu
     ("function primary() { if (state === 'won' && LV === 1) startLevel(2); else startGame(); }",
-     "function primary() { if (state === 'won' && LV === 1) LI++; startGame(); }", 1),
+     "function primary() { if (state === 'won' && LV === 1) LI = kitNext(); startGame(); }", 1),
     ("<b>THE BRIDGE</b><span>GATES &middot; CAGE &middot; LASERS</span>", "<b>THE BRIDGE</b><span>ENDLESS &middot; 9 WEAPONS</span>", 1),
     ("get s() { return { LV,",
      "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),

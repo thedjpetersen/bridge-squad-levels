@@ -36,11 +36,11 @@ window.BRIDGE_LEVELS = [
     name: 'STAGE 3', theme: 'sunset',
     gates: [
       { t: 1.5, every: 0.35, count: 18, val: 1 },
-      { t: 7.9, op: '-', val: 6 },
+      { t: 7.9, op: '-', val: 6, shoot: true, step: 4, cap: 3 },   // shoot it to turn it blue
       { t: 8.3, every: 0.35, count: 14, val: 1 },
       { t: 13.4, op: 'x', val: 2 },
       { t: 13.8, every: 0.35, count: 10, val: 1 },
-      { t: 17.4, op: '-', val: 12 },
+      { t: 17.4, op: '-', val: 12, shoot: true, step: 5, cap: 4 },
       { t: 17.8, every: 0.35, count: 10, val: 1 },
       { t: 24.0, every: 1.0, count: 4, val: 99 },
     ],
@@ -68,6 +68,7 @@ window.BRIDGE_LEVELS = [
       { t: 12.8, every: 0.4, count: 8, val: 2 },
       { t: 16.4, weapon: 'shock' },
       { t: 16.8, every: 0.4, count: 8, val: 2 },
+      { t: 21.0, buff: 'dmg' },
       { t: 23.0, every: 1.1, count: 3, val: 99 },
     ],
     horde: [

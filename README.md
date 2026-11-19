@@ -37,6 +37,23 @@ noclipepe's game changes over time. In November 2026 it gained a second stage, F
 
 To deploy, run `./setup.sh` (which also writes `patches.json`). Then put `web/index.html` in a folder together with `patches.json`, `levels.js`, and `docs/cover.svg` and `docs/cover.jpg` (renamed to `cover.svg` and `cover.jpg`). `art/cover.py` regenerates the cover art.
 
+## Progression and genre features
+
+These were chosen by benchmarking the kit against this genre's video ads and gate shooters (Last War's "math shooter" ads, Weapon Rush, Gate Militia, Mob Control):
+
+| Feature | How it works |
+|---|---|
+| **Shootable gates** | Gates with `shoot: true` count up as your squad shoots them: every `step` damage adds 1, up to `cap`. A red `−6` trap can be shot up into a blue `+3` before you reach it. Generated levels make traps shootable from level 4, and some `+` gates from level 6. |
+| **Stat gates** | `{ buff: 'rate' }` gives +25% fire rate and `{ buff: 'dmg' }` gives +25% damage. Both stack for the rest of the level. |
+| **Coins and upgrades** | Wins pay 10 + 10 per star + kills / 40 coins; losses pay kills / 60. Five upgrade tracks of five tiers each: bigger starting squad, faster fire, harder hits, a weaker cage and hero damage. |
+| **Progress** | The menu opens at your furthest level. **LEVELS** shows a grid of every unlocked level with your best stars. |
+| **Daily** | One generated level per date, the same for everyone (`?daily=1`), paying 40 extra coins. |
+| **Share** | The end screen's **SHARE** uses the system share sheet, or copies a link with your stars. |
+
+Progress is kept in the browser's `localStorage` under `bridge-squad-kit-v1`.
+
+![Menu, level grid, upgrade shop and a trap being shot up](docs/ui.png)
+
 ## How the original works
 
 The game is one HTML page plus `three.min.js`. The game script is stored as text in `<script type="text/plain" id="main">` and runs once three.js has loaded. It uses no image or sound files: every mesh, texture and sound is generated in code.
