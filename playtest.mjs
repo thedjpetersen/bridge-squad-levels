@@ -25,6 +25,7 @@ const BOT = () => new Promise(done => {
     else if (!s.cageOpen && s.N >= 6 && s.D + 19 > lv.cage.d - 1.75) { tx = lv.cage.x + 0.3; why = 'cage'; }
     else if (s.gates.length) { tx = 6; why = 'gates'; }
     else { const b = s.bosses.find(b => b.active && b.hp > 0) || s.bosses[0]; tx = b ? b.x : 0; why = 'boss'; }
+    if (s.od >= 1 && s.odT <= 0 && s.bosses.some(b => b.active && b.d - s.D < 26)) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));   // fire overdrive at the boss
     steer(tx);
     const sec = Math.floor(s.t);
     if (sec !== last && sec % 3 === 0) { last = sec; log.push(`${sec}s ${why} ${s.weapon} N=${s.N} cage=${Math.max(0, Math.round(s.cageHp))} bosses=${s.bosses.map(b => b.kind + ':' + Math.round(b.hp)).join(',')}`); }

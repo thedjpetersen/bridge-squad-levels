@@ -19,12 +19,12 @@ python3 -m http.server 8731     # then open http://127.0.0.1:8731/?level=1
 
 | | |
 |---|---|
-| **Levels** | Six hand-made stages in `levels.js`. Every level number after them is **generated** from a seed, so `?level=57` is the same level for everyone. A win leads to **NEXT STAGE**, with no end. |
+| **Levels** | Seven hand-made stages in `levels.js`. Every level number after them is **generated** from a seed, so `?level=57` is the same level for everyone. A win leads to **NEXT STAGE**, with no end. |
 | **Level archetypes** | Generated levels draw from classic, SWARM (runners), SAWS (saw blades and a shield gate), ARSENAL (several weapon gates and frenzy), BOOM (barrels and bombers), SIEGE (brutes), BOSS RUSH (up to four mid-bosses) and FROST (freeze from the cage). |
 | **Weapons** | `rifle`, `laser` (the original ATK+150%), `rapid`, `spread`, `rocket` (splash damage), `rail` (pierces), `flame` (short range, burns through crowds), `shock` (Tesla: chains to 3 more enemies), `freeze` (slows enemies and bosses). The cage crate gives one, and weapon gates give others. |
 | **Gates** | `+N` (blue, or gold for 10+), `×N` (purple), `−N` and `÷N` traps (red; steer off the belt), weapon gates (green), **FRENZY** (double fire rate for a few seconds) and **SHIELD** (no melee, saw or mid-boss losses for a few seconds). |
 | **Enemies** | `grunt`, `brute` (big and tanky; survives several melee trades), `runner` (fast, aggros early), `bomber` (explodes when killed and takes extra soldiers with it in melee; chain reactions!). |
-| **Themes** | Eight original looks for sky, water, deck and lighting: dusk (stock), day, sunset, neon, toxic, frost, desert and storm. Each archetype has a default, and any level can set `theme:`. |
+| **Themes** | Ten original looks for sky, water, deck and lighting: dusk (stock), day, sunset, neon, toxic, frost, desert, storm, aurora and dawn. Each archetype has a default, and any level can set `theme:`. |
 | **Hazards** | **Saw blades** sweep across the belt or the deck at a fixed point. **Explosive barrels** sit in the horde: shoot one to blast everything around it. |
 
 ## Tracking the original
@@ -51,6 +51,22 @@ These were chosen by benchmarking the kit against this genre's video ads and gat
 | **Share** | The end screen's **SHARE** uses the system share sheet, or copies a link with your stars. |
 
 Progress is kept in the browser's `localStorage` under `bridge-squad-kit-v1`.
+
+### Mechanics of our own
+
+These go beyond the genre's staples:
+
+| Mechanic | How it works |
+|---|---|
+| **Mystery `?` gates** | `{ mystery: true }` hides one of ×2, +20, +30, ÷2, −15, a shield, frenzy, rockets, a railgun or +25% damage, rolled each run. `inside:` fixes it instead. Shoot the gate for `step` damage (20 by default) to reveal it before you arrive, or run through blind. |
+| **Prisoner pods** | Hazard `{ type: 'pod', x, d, hp, n }`: a glass pod inside the horde. Shoot it open and its `n` soldiers sprint over to join you, which is a reason to steer into danger. |
+| **Splitters** | Enemy type `splitter` (purple, 3 hp): bursts into two grunts when killed. |
+| **Overdrive** | Kills fill a meter. Once it's full, tap **OVERDRIVE** (or press F or Space) for 4 s of double fire rate, +50% damage and a shield. It adds a timing decision to an auto-shooter. |
+
+![Stage 7: a ? gate revealing ×2, prisoner pods, and overdrive charging then ready](docs/stage7.png)
+
+Generated levels add two archetypes for these. **GAMBLE** (from level 7, theme `aurora`) has 3–4 `?` gates. **RESCUE** (from level 6, theme `dawn`) has 4–6 pods. Single `?` gates, pods and splitters also turn up in other levels.
+
 
 ![Menu, level grid, upgrade shop and a trap being shot up](docs/ui.png)
 

@@ -36,13 +36,26 @@ const WEAPONS = {
 const PHW = [0.42, 0.42, 0.55, 0.55, 0.42, 0.55, 0.4, 0.42, 0.6, 0.5, 0.7, 0.42, 0.45];   // hit half-width
 const PSPL = [0, 0, 0, 0, 0, 0, 0, 0, 1.6, 0, 0, 0, 0];                          // splash radius (rockets)
 const PFX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2];                              // 1 chain lightning, 2 freeze, 3 flame (pierces without losing damage)
-let W = WEAPONS.rifle, wName = 'rifle', frenzyT = 0, shieldT = 0, shieldFx = 0;
+let W = WEAPONS.rifle, wName = 'rifle', frenzyT = 0, shieldT = 0, shieldFx = 0, od = 0, odT = 0, odFx = 0, odShown = -1;
+function odUI() { // the overdrive button: fills with kills, glows when ready
+  const b = $('bOD'); if (!b) return;
+  const show = LV === 1 && state === 'play', v = odT > 0 ? -1 : Math.round(od * 40);
+  b.style.display = show ? 'flex' : 'none'; if (!show || v === odShown) return; odShown = v;
+  b.classList.toggle('ready', od >= 1 && odT <= 0); b.classList.toggle('on', odT > 0);
+  $('odF').style.width = (odT > 0 ? 100 : od * 100) + '%'; $('odL').textContent = odT > 0 ? 'OVERDRIVE!' : od >= 1 ? 'OVERDRIVE ▶' : 'OVERDRIVE';
+}
+function overdrive() {
+  if (LV !== 1 || state !== 'play' || od < 1 || odT > 0) return;
+  odT = 4; shieldT = Math.max(shieldT, 4); fovK = 1; shake = Math.max(shake, 0.4); sfx.power(); sfx.gate99();
+  popup('OVERDRIVE!', clamp(X, -2, 2), 3.6, D + 2, '#ffe14a', '#5a2a00', 3.0, 1.2, 1.4); ring(X, D, 0.5, 9, 0.5, 0xffc020); burst(X, 1, D, 80, 11, 2.5, 1.8, 0.3, 1.2, 0.6, -4, 4);
+  $('flash').style.transition = 'none'; $('flash').style.opacity = 0.5; requestAnimationFrame(() => { $('flash').style.transition = 'opacity .5s'; $('flash').style.opacity = 0; });
+}
 
 // ---- enemy types: 0 grunt, 1 brute (tanky; survives several melee trades), 2 runner (fast, aggros early),
 //      3 bomber (explodes when killed, hurting nearby enemies; takes extra soldiers with it in melee)
-const ETYPE = { grunt: 0, brute: 1, runner: 2, bomber: 3 };
-const EHP = [1, 5, 1, 1], ESPD = [1, 1, 1.75, 1.2], EAGG = [0, 0, 3, 2], ESCL = [1, 1.42, 0.86, 0.96];
-const ECOL = [[1, 1, 1], [0.6, 0.48, 0.78], [1.4, 1.15, 0.45], [0.42, 1.45, 0.32]], ICE = [0.45, 0.95, 2.4];
+const ETYPE = { grunt: 0, brute: 1, runner: 2, bomber: 3, splitter: 4 };   // 4: bursts into two grunts when killed
+const EHP = [1, 5, 1, 1, 3], ESPD = [1, 1, 1.75, 1.2, 0.9], EAGG = [0, 0, 3, 2, 0], ESCL = [1, 1.42, 0.86, 0.96, 1.2];
+const ECOL = [[1, 1, 1], [0.6, 0.48, 0.78], [1.4, 1.15, 0.45], [0.42, 1.45, 0.32], [0.95, 0.35, 1.5]], ICE = [0.45, 0.95, 2.4];
 
 // ---- gate styles
 const GATE_STYLE = {
@@ -55,6 +68,7 @@ const GATE_STYLE = {
   f:   { glass: [1.0, 0.3, 0.0],    glow: [1.0, 0.35, 0.0],  edge: '#902800' },
   s:   { glass: [0.1, 0.85, 1.0],   glow: [0.15, 0.9, 1.0],  edge: '#005c78' },
   r:   { glass: [0.35, 0.95, 0.05], glow: [0.4, 1.0, 0.1],   edge: '#2a6a00' },
+  q:   { glass: [0.12, 0.1, 0.18],  glow: [1.0, 0.8, 0.15],  edge: '#5a4500' },
   d:   { glass: [0.95, 0.15, 0.55], glow: [1.0, 0.2, 0.6],   edge: '#7a0040' },
 };
 const gateMeshes = new Map();
@@ -75,7 +89,12 @@ function gateMeshFor(label, edge) {
   if (!gateMeshes.has(key)) gateMeshes.set(key, inst(gateNumGeo, new THREE.MeshBasicMaterial({ map: gateTex(label, edge), color: numBright, vertexColors: true, alphaTest: 0.5 }), 72, 0));
   return gateMeshes.get(key);
 }
+const MYSTERY = [{ op: 'x', val: 2 }, { op: 'x', val: 2 }, { val: 20 }, { val: 30 }, { op: '/', val: 2 }, { op: '-', val: 15 }, { buff: 'shield', secs: 5 }, { buff: 'frenzy', secs: 6 }, { weapon: 'rocket' }, { weapon: 'rail' }, { buff: 'dmg' }];
 function makeGate(spec, t) {
+  if (spec.mystery) { // a ? gate: what is inside is rolled per run; shoot it enough to see it before you commit
+    const style = GATE_STYLE.q, inside = spec.inside || MYSTERY[(Math.random() * MYSTERY.length) | 0];
+    return { x: LANE_X, d: REL * t, t, val: 1, kind: 'q', label: '?', glass: style.glass, glow: style.glow, mesh: gateMeshFor('?', style.edge), alive: true, shoot: true, sv: 0, cap: 1, step: spec.step || 20, charge: 0, inside };
+  }
   const v = spec.val || 1, op = spec.op || '+';
   const kind = spec.weapon ? 'w' : spec.buff === 'frenzy' ? 'f' : spec.buff === 'shield' ? 's' : spec.buff === 'rate' ? 'r' : spec.buff === 'dmg' ? 'd' : op === 'x' ? 'x' : op === '-' ? '-' : op === '/' ? '/' : '';
   const style = GATE_STYLE[kind || (v < 10 ? 'add' : 'big')];
@@ -85,7 +104,13 @@ function makeGate(spec, t) {
   return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true,
     shoot, sv: kind === '-' ? -v : v, step: spec.step || 6, cap: spec.cap != null ? spec.cap : (kind === '-' ? 3 : v + 5), charge: 0 };
 }
+function revealGate(g) { // turn a ? gate into whatever it was hiding, in place
+  const r = makeGate(g.inside, g.t), d = g.d; Object.assign(g, r, { d, alive: true }); g.shoot = false;
+  popup(g.label, g.x - 0.4, 3.2, g.d, '#ffe14a', '#3a2a00', 2.6, 0.9, 2); ring(g.x, g.d, 0.4, 3.5, 0.35, 0xffd040); burst(g.x, 1.2, g.d, 24, 7, 2.4, 2.0, 0.5, 0.8, 0.4, -4, 2);
+  if (thr('reveal', 100)) tone('triangle', 520, 1240, 0.18, 0.1);
+}
 function shootGate(g, dmg, x) { // every `step` damage raises the gate by one; a red trap can be shot up into a blue gate
+  if (g.kind === 'q') { g.charge += dmg; if (Math.random() < 0.3) burst(x, 1.1, g.d, 1, 3, 2.4, 2.0, 0.4, 0.5, 0.15); if (g.charge >= g.step) revealGate(g); return; }
   g.charge += dmg;
   if (PT < MAXPT - 300 && Math.random() < 0.3) burst(x, 1.1, g.d, 1, 3, 1.4, 1.8, 2.4, 0.5, 0.15);
   let changed = false;
@@ -106,6 +131,7 @@ function loseNearest(k, x, d) { // the k soldiers closest to (x, d) die
   for (let n = 0; n < k && N > 0; n++) { let best = 0, bd = 1e9; for (let i = 0; i < N; i++) { const q = Math.abs(sX[i] - x) + Math.abs(sD[i] - d); if (q < bd) { bd = q; best = i; } } killSoldier(best); }
 }
 function gateSpecial(g) {
+  if (g.kind === 'q') { revealGate(g); if (g.kind) gateSpecial(g); else addSoldiers(g.val, g.x - 0.6, g.d, 1.0); return; }
   if (g.kind === 'x') {
     addSoldiers(Math.max(0, Math.min(MAXS - N, Math.round(N * (g.val - 1)))), g.x - 0.6, g.d, 1.3);
     sfx.gate99(); popup(g.label, g.x - 0.6, 3.0, g.d, '#f0c8ff', '#3a0a5a', 3.4, 1.0, 2.2);
@@ -155,9 +181,11 @@ const sawGeo = cylG(0.9, 0.9, 0.12, 14).rotateX(Math.PI / 2), hubGeo = cylG(0.3,
 const sawMat = std({ color: 0xd6dae4, roughness: 0.22, metalness: 0.95 }), hubMat = std({ color: 0xd0181f, roughness: 0.4, metalness: 0.4, emissive: 0x500000 });
 const barrelGeo = cylG(0.42, 0.42, 1.05, 16), bandGeo = cylG(0.44, 0.44, 0.16, 16);
 const barrelMat = std({ color: 0xd8261c, roughness: 0.4, metalness: 0.5 }), bandMat = std({ color: 0xffc400, roughness: 0.35, metalness: 0.6, emissive: 0x332200 });
+const podGeo = sphG(0.75, 20, 14), podMat = phys({ color: 0x7fc8ff, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.45, clearcoat: 1, envMapIntensity: 1.2 }), podCore = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.4, 3.0) });
+const podLabels = [];
 const trackMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.15, 0.1), transparent: true, opacity: 0.35, depthWrite: false });
 function buildHazards(list) {
-  for (const h of hazards) { scene.remove(h.mesh); if (h.track) scene.remove(h.track); }
+  for (const h of hazards) { scene.remove(h.mesh); if (h.track) scene.remove(h.track); if (h.label) h.label.sp.visible = false; }
   hazards.length = 0;
   for (const s of list) {
     const g = new THREE.Group(); scene.add(g);
@@ -165,6 +193,15 @@ function buildHazards(list) {
       const blade = new THREE.Mesh(sawGeo, sawMat); blade.castShadow = true; g.add(blade); g.add(new THREE.Mesh(hubGeo, hubMat));
       const track = new THREE.Mesh(flatQuad, trackMat); track.position.set((s.x0 + s.x1) / 2, 0.07, -s.d); track.scale.set(s.x1 - s.x0 + 1.8, 1, 0.5); scene.add(track);
       hazards.push({ type: 'saw', d: s.d, x0: s.x0, x1: s.x1, speed: s.speed || 1.6, ph: s.phase || 0, x: s.x0, mesh: g, blade, track, cd: 0 });
+    } else if (s.type === 'pod') { // prisoners: shoot the pod open and they run to join the squad
+      const shell = new THREE.Mesh(podGeo, podMat); shell.position.y = 0.85; g.add(shell);
+      const core = new THREE.Mesh(sphG(0.32, 12, 8), podCore); core.position.y = 0.85; g.add(core);
+      for (let k = 0; k < 3; k++) { const m = new THREE.Mesh(sphG(0.17, 10, 8), std({ color: 0x2f7bff, roughness: 0.35 })); m.position.set(Math.cos(k * 2.1) * 0.32, 0.6, Math.sin(k * 2.1) * 0.32); g.add(m); }
+      g.position.set(s.x, 0, -s.d);
+      const idx = hazards.filter(z => z.type === 'pod').length;
+      if (!podLabels[idx]) podLabels[idx] = mkLabel(256, 96, 1.9, 0.72, 11);
+      const lb = podLabels[idx]; lb.ctx.clearRect(0, 0, 256, 96); fancyText(lb.ctx, '+' + (s.n || 8), 128, 52, 64, '#bfe6ff', '#06306e', 12); lb.tex.needsUpdate = true; lb.sp.visible = true; lb.sp.position.set(s.x, 2.4, -s.d);
+      hazards.push({ type: 'pod', x: s.x, d: s.d, hp: s.hp || 10, n: s.n || 8, mesh: g, core, label: lb });
     } else if (s.type === 'barrel') {
       const b = new THREE.Mesh(barrelGeo, barrelMat); b.position.y = 0.53; b.castShadow = true; g.add(b);
       for (const y of [0.25, 0.8]) { const r = new THREE.Mesh(bandGeo, bandMat); r.position.y = y; g.add(r); }
@@ -180,7 +217,16 @@ function blowBarrel(h) {
   popup('BOOM!', h.x, 3.2, h.d, '#ffe23a', '#5a1a00', 2.2, 0.8, 2);
   splash(h.x, h.d, h.r, 30);
 }
+function freePod(h) {
+  h.hp = 0; h.mesh.visible = false; if (h.label) h.label.sp.visible = false;
+  addSoldiers(h.n, h.x, h.d, 0.8);
+  popup('FREED +' + h.n, h.x, 3.0, h.d, '#bfe6ff', '#06306e', 2.2, 0.9, 2); ring(h.x, h.d, 0.4, 3.6, 0.35, 0x7fc8ff); burst(h.x, 1, h.d, 40, 8, 0.6, 1.6, 2.5, 0.8, 0.5, -5, 3);
+  sfx.gate99();
+}
 function updateHazards(dt) {
+  if (odT > 0) { odT -= dt; odFx -= dt; if (odFx <= 0) { odFx = 0.25; ring(X, D, hw, hw + 2.2, 0.25, 0xffc020); } if (odT <= 0) od = 0; }
+  odUI();
+  for (const h of hazards) if (h.type === 'pod' && h.hp > 0) h.core.scale.setScalar(0.85 + 0.15 * Math.sin(time * 6 + h.d));
   if (shieldT > 0) { shieldT -= dt; shieldFx -= dt; if (shieldFx <= 0) { shieldFx = 0.35; ring(X, D, hw + 0.2, hw + 1.6, 0.35, 0x60e0ff); } }
   if (frenzyT > 0) frenzyT -= dt;
   for (const h of hazards) {
@@ -209,9 +255,11 @@ const THEMES = {
   toxic:  { bg: [0.03, 0.08, 0.02], fog: [0.12, 0.22, 0.06], deep: [0.02, 0.05, 0.01], shal: [0.12, 0.28, 0.04], glint: [0.6, 1.0, 0.2], deck: 0xdde6cc, conc: 0x9aa884, pier: 0x4a5636, sun: [0xeaffb0, 0.8], hemi: [0xe0ffc0, 0x3a4a22, 0.3], rim: [0xb0ff60, 0.42], css: '#16260a' },
   desert: { bg: [0.70, 0.50, 0.28], fog: [0.88, 0.70, 0.44], deep: [0.0, 0.20, 0.26], shal: [0.05, 0.50, 0.52], glint: [0.8, 1.0, 0.95], deck: 0xfff0d0, conc: 0xd8c09a, pier: 0x8a7254, sun: [0xffe8b8, 1.0], hemi: [0xfff0d0, 0x8a6a44, 0.42], rim: [0xffe0a0, 0.35], css: '#c09050' },
   storm:  { bg: [0.10, 0.04, 0.05], fog: [0.22, 0.08, 0.08], deep: [0.04, 0.02, 0.03], shal: [0.20, 0.06, 0.07], glint: [1.0, 0.35, 0.25], deck: 0xdcd0d0, conc: 0x9a8a8e, pier: 0x4a3438, sun: [0xffd0c0, 0.75], hemi: [0xffc8c8, 0x402028, 0.3], rim: [0xff6a5a, 0.5], css: '#2a0c10' },
+  aurora: { bg: [0.01, 0.06, 0.07], fog: [0.04, 0.20, 0.18], deep: [0.0, 0.04, 0.05], shal: [0.02, 0.22, 0.20], glint: [0.3, 1.0, 0.7], deck: 0xc8e8e0, conc: 0x7a9a96, pier: 0x2c4a48, sun: [0xc0fff0, 0.75], hemi: [0xb0ffe8, 0x1c3a38, 0.32], rim: [0x60ffc0, 0.55], css: '#062424' },
+  dawn:   { bg: [0.86, 0.56, 0.62], fog: [0.96, 0.76, 0.70], deep: [0.10, 0.12, 0.30], shal: [0.45, 0.42, 0.62], glint: [1.0, 0.85, 0.7], deck: 0xfff0ec, conc: 0xe0c4c8, pier: 0x8a6a7a, sun: [0xffe0c0, 1.0], hemi: [0xfff0f0, 0x8a6a7a, 0.45], rim: [0xffc0a0, 0.35], css: '#d8909c' },
   frost:  { bg: [0.72, 0.82, 0.92], fog: [0.86, 0.92, 0.98], deep: [0.12, 0.30, 0.38], shal: [0.62, 0.84, 0.90], glint: [1.0, 1.0, 1.0], deck: 0xeaf6ff, conc: 0xd8e6f2, pier: 0x8aa0b8, sun: [0xf0f8ff, 0.92], hemi: [0xffffff, 0x8fa8c0, 0.48], rim: [0xd0f0ff, 0.4], css: '#8cb6dc' },
 };
-const ARCH_THEME = { classic: 'dusk', swarm: 'sunset', saws: 'neon', arsenal: 'day', boom: 'toxic', siege: 'desert', bossrush: 'storm', frost: 'frost' };
+const ARCH_THEME = { classic: 'dusk', swarm: 'sunset', saws: 'neon', arsenal: 'day', boom: 'toxic', siege: 'desert', bossrush: 'storm', frost: 'frost', gamble: 'aurora', rescue: 'dawn' };
 function applyTheme(name) {
   const T = THEMES[name] || THEMES.dusk;
   scene.background.setRGB(...T.bg); scene.fog.color.setRGB(...T.fog);
@@ -250,7 +298,7 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
     if (g.weapon && !WEAPONS[g.weapon]) w.push('unknown weapon "' + g.weapon + '" (have: ' + Object.keys(WEAPONS) + ')');
     if (g.buff && !['frenzy', 'shield', 'rate', 'dmg'].includes(g.buff)) w.push('unknown buff "' + g.buff + '" (have: frenzy, shield, rate, dmg)');
     if (g.op && !['+', '-', 'x', '/'].includes(g.op)) w.push('unknown gate op "' + g.op + '" (have: + - x /)');
-    if (!g.weapon && !g.buff && !(g.val >= 1)) w.push('gate values must be >= 1 (use op: "-" for minus gates)');
+    if (!g.weapon && !g.buff && !g.mystery && !(g.val >= 1)) w.push('gate values must be >= 1 (use op: "-" for minus gates)');
     for (let j = 0; j < g.count; j++) times.push(g.t + g.every * j);
   }
   times.sort((a, b) => a - b);
@@ -262,7 +310,7 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
   let e = 0; for (const h of Lv.horde) e += Math.floor((h.d1 - h.d0) / h.gap + 1) * Math.floor((h.x1 - h.x0) / h.gap + 1);
   if (e > MAXE) w.push('horde has ~' + e + ' enemies; only the first ' + MAXE + ' spawn');
   for (const h of Lv.horde) if (!(h.type in ETYPE)) w.push('unknown enemy type "' + h.type + '" (have: ' + Object.keys(ETYPE) + ')');
-  for (const h of Lv.hazards) if (h.type !== 'saw' && h.type !== 'barrel') w.push('unknown hazard "' + h.type + '" (have: saw, barrel)');
+  for (const h of Lv.hazards) if (!['saw', 'barrel', 'pod'].includes(h.type)) w.push('unknown hazard "' + h.type + '" (have: saw, barrel, pod)');
   for (const b of Lv.bosses) if (b.kind !== 0 && b.kind !== 1) w.push('mid-bosses must be kind 0 or 1 (kind 2 is the final boss and ends the level)');
   if (Lv.theme && !THEMES[Lv.theme]) w.push('unknown theme "' + Lv.theme + '" (have: ' + Object.keys(THEMES) + ')');
   if (Lv.cage.weapon && !WEAPONS[Lv.cage.weapon]) w.push('unknown cage weapon "' + Lv.cage.weapon + '"');
@@ -275,7 +323,7 @@ function checkLevel(Lv) { // the engine's hard limits; a broken level still load
 function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const ARCHETYPES = [ // [id, HUD name, first level it can appear on]
   ['classic', '', 1], ['swarm', 'SWARM', 2], ['saws', 'SAWS', 3], ['arsenal', 'ARSENAL', 4],
-  ['boom', 'BOOM', 5], ['siege', 'SIEGE', 6], ['bossrush', 'BOSS RUSH', 8], ['frost', 'FROST', 11],
+  ['boom', 'BOOM', 5], ['siege', 'SIEGE', 6], ['rescue', 'RESCUE', 6], ['gamble', 'GAMBLE', 7], ['bossrush', 'BOSS RUSH', 8], ['frost', 'FROST', 11],
 ];
 const WEAPON_UNLOCK = { laser: 1, rapid: 3, spread: 4, rocket: 5, flame: 6, rail: 7, shock: 9, freeze: 11 };
 function generateLevel(n, seed) {
@@ -305,6 +353,8 @@ function generateLevel(n, seed) {
   }
   if (A === 'arsenal' || A === 'bossrush' || (n >= 6 && R() < 0.35)) { const s = at(0.9); s.buff = 'frenzy'; s.secs = 6; }
   if (A === 'saws' || A === 'bossrush' || (n >= 5 && R() < 0.3)) { const s = at(0.25 + R() * 0.3); s.buff = 'shield'; s.secs = 5; }
+  const nMyst = A === 'gamble' ? 3 + Math.floor(R() * 2) : n >= 5 && R() < 0.35 ? 1 : 0;   // ? gates
+  for (let i = 0; i < nMyst; i++) { const s = at(0.25 + R() * 0.65); if (s.t != null) s.mystery = true; }
   let dpsMul = 1;   // stat gates make the squad hit harder, so the boss gets tougher to match
   if (n >= 3) for (let i = 0; i < 1 + (n >= 10 ? 1 : 0); i++) { const s = at(0.3 + R() * 0.55); if (s.t != null) { s.buff = R() < 0.5 ? 'rate' : 'dmg'; dpsMul *= 1.25; } }
   if (n >= 4) for (const s of slots) { // shootable gates: from level 4 traps can be shot up, from level 6 some +gates too
@@ -317,6 +367,7 @@ function generateLevel(n, seed) {
   let ex = 1, wpn = cage.weapon, frenzyLate = false;
   for (const s of slots) {
     if (s.weapon) { wpn = s.weapon; continue; }
+    if (s.mystery) continue;
     if (s.buff) { if (s.buff === 'frenzy' && s.t > bigT - 4) frenzyLate = true; continue; }
     if (s.op === '-') s.val = Math.max(2, Math.round(ex * (0.12 + 0.13 * k)));   // a trap costs a share of the squad you should have by then
     if (s.op === '/') s.val = 2;
@@ -324,8 +375,8 @@ function generateLevel(n, seed) {
   }
   if (A === 'saws') ex *= 0.85;
   // horde: bands along the bridge; the archetype picks which enemy types fill them
-  const typePool = A === 'swarm' ? ['runner', 'runner', 'grunt'] : A === 'siege' ? ['brute', 'brute', 'grunt'] : A === 'boom' ? ['bomber', 'bomber', 'grunt']
-    : ['grunt'].concat(n >= 2 ? ['runner'] : [], n >= 3 ? ['brute'] : [], n >= 5 ? ['bomber'] : []);
+  const typePool = A === 'swarm' ? ['runner', 'runner', 'grunt'] : A === 'siege' ? ['brute', 'splitter', 'grunt'] : A === 'boom' ? ['bomber', 'bomber', 'grunt']
+    : ['grunt'].concat(n >= 2 ? ['runner'] : [], n >= 3 ? ['brute'] : [], n >= 5 ? ['bomber'] : [], n >= 8 ? ['splitter'] : []);
   const d0 = cage.d + 1.3, d1 = 62.6, bands = 2 + Math.floor(R() * 2), thin = A === 'bossrush' ? 1.25 : 1;
   const horde = []; let cells = 0;
   for (let i = 0; i < bands; i++) {
@@ -348,6 +399,10 @@ function generateLevel(n, seed) {
   if (A === 'boom' || (n >= 5 && R() < 0.3)) {
     const nb = A === 'boom' ? 6 + Math.floor(R() * 6) : 3;
     for (let i = 0; i < nb; i++) hazards.push({ type: 'barrel', x: +(-5.4 + R() * 7.6).toFixed(2), d: +(d0 + 3 + R() * (d1 - d0 - 8)).toFixed(1) });
+  }
+  if (A === 'rescue' || (n >= 4 && R() < 0.35)) {
+    const np = A === 'rescue' ? 4 + Math.floor(R() * 3) : 1 + Math.floor(R() * 2);
+    for (let i = 0; i < np; i++) { const pn = 6 + Math.floor(n / 3) + Math.floor(R() * 6); hazards.push({ type: 'pod', x: +(-5 + R() * 7).toFixed(2), d: +(d0 + 2 + R() * (d1 - d0 - 14)).toFixed(1), hp: 10 + n, n: pn }); ex = Math.min(MAXS, ex + pn * 0.6); }
   }
   // mid-bosses
   const nb = Math.min(A === 'bossrush' ? 4 : 3, 1 + Math.floor(n / 5) + (A === 'bossrush' ? 2 : 0)), bosses = [];
@@ -456,7 +511,7 @@ APPLY_LEVEL = r"""function applyLevel() {
   if (LV !== 1) { buildHazards([]); applyTheme('dusk'); return; }   // the original's stage 2 (Flood Rescue) is left as it is
   CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = Math.max(5, Math.round(L.cage.hp * (1 - SAVE.up.cage * 0.08)));
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
-  W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0;
+  W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0; od = odT = 0; odShown = -1;
   const cw = WEAPONS[L.cage.weapon] || WEAPONS.laser, lc = lblCrate.ctx; lc.clearRect(0, 0, 640, 160);
   fancyText(lc, cw.label, 320, 80, cw.label.length > 8 ? 92 : 108, '#ffe23a', '#6a0a56', 22); lblCrate.tex.needsUpdate = true;
   buildHazards(L.hazards);
@@ -480,7 +535,7 @@ HORDE_OLD = """  // horde
 HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room around the cage and the barrels
   for (const h of L.horde) for (let d = h.d0; d <= h.d1 + 0.01; d += h.gap) for (let x = h.x0; x <= h.x1 + 0.01; x += h.gap) {
     if (Math.abs(x - CAGE_X) < 2.2 && Math.abs(d - CAGE_D) < 2.6) continue;
-    if (hazards.some(z => z.type === 'barrel' && Math.abs(x - z.x) < 0.7 && Math.abs(d - z.d) < 0.7)) continue;
+    if (hazards.some(z => (z.type === 'barrel' || z.type === 'pod') && Math.abs(x - z.x) < 0.9 && Math.abs(d - z.d) < 0.9)) continue;
     if (E >= MAXE) break;
     eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = h.hp; eTy[E] = h.ty; eSlow[E] = 0; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;
   }
@@ -513,6 +568,12 @@ KIT_CSS = r'''
   #kitt{position:absolute;left:50%;bottom:10%;transform:translateX(-50%);z-index:9;padding:.4em .9em;border-radius:.8em;background:rgba(0,0,0,.8);color:#fff;font-size:.9em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
   #kitt.show{opacity:1}
   body.clean #kit{display:none!important}
+  #bOD{position:absolute;left:2%;top:6.6%;z-index:5;display:none;width:9.5em;height:1.9em;padding:0;overflow:hidden;border-radius:.7em;font-size:.9em;justify-content:center;align-items:center;background:linear-gradient(180deg,rgba(20,30,70,.9),rgba(8,14,40,.92))}
+  #bOD #odF{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(180deg,#ffe680,#ff9a00);transition:width .15s}
+  #bOD b{position:relative;font-size:.8em;letter-spacing:.06em;text-shadow:0 .08em 0 rgba(0,0,0,.6)}
+  #bOD.ready{animation:pulse .7s infinite;box-shadow:0 0 1em #ffc020,0 .2em 0 rgba(8,30,100,.95)}
+  #bOD.on #odF{background:linear-gradient(180deg,#fff6b0,#ffd000)}
+  body.clean #bOD{display:none!important}
 '''
 
 PATCHES = [  # (old, new, expected count) -- applied in order
@@ -573,11 +634,12 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
     ("sCd[i] += FIRE_T; sKick[i] = 1; fire(sX[i] + mzX, sD[i] + mzD, sType);",
-     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
+     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1) * (odT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
     ("const pw = (HEROT[ty] ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
     ("    if (!dead) for (const b of bosses) {",
      "    if (!dead && LV === 1) for (const g of gates) if (g.alive && g.shoot && g.sv < g.cap && d1 >= g.d - 0.35 && d0 <= g.d + 0.35 && Math.abs(x - g.x) < GATE_HW) { shootGate(g, dmg, x); dead = true; break; }\n"
      "    if (!dead) for (const h of hazards) if (h.type === 'barrel' && h.hp > 0 && Math.abs(x - h.x) < 0.45 + pw * 0.5 && d1 >= h.d - 0.45 && d0 <= h.d + 0.45) { h.hp -= dmg; dead = true; if (h.hp <= 0) blowBarrel(h); break; }\n"
+     "    if (!dead) for (const h of hazards) if (h.type === 'pod' && h.hp > 0 && Math.abs(x - h.x) < 0.8 + pw * 0.4 && d1 >= h.d - 0.8 && d0 <= h.d + 0.8) { h.hp -= dmg; dead = true; if (h.hp <= 0) freePod(h); break; }\n"
      "    if (!dead) for (const b of bosses) {", 1),
     ("if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { hitBoss(b, dmg, x); dead = true; break; }",
      "if (Math.abs(x - b.x) < b.r && d1 >= b.d - b.r * 0.8 && d0 <= b.d + b.r) { if (PFX[ty] === 2) b.frost = Math.min(1, b.frost + 0.12); hitBoss(b, dmg, x); dead = true; break; }", 1),
@@ -596,7 +658,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- enemy types and status effects
     ("function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;",
      "function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;\n"
-     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off", 1),
+     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off\n  if (eTy[i] === 4) { eTy[i] = 0; for (let k = 0; k < 2 && E < MAXE; k++, E++) { eX[E] = eX[i] + (k ? 0.4 : -0.4); eD[E] = eD[i] + rand(-0.2, 0.2); eHp[E] = 1; eTy[E] = 0; eSlow[E] = 0; eSt[E] = eSt[i]; ePh[E] = Math.random() * TAU; } burst(eX[i], 0.8, eD[i], 8, 5, 1.6, 0.5, 2.4, 0.7, 0.3, -5, 2); }   // splitters split\n  if (LV === 1 && state === 'play' && odT <= 0) od = Math.min(1, od + 1 / 90);   // kills charge overdrive", 1),
     ("if (eD[i] - front < 6 && Math.abs(eX[i] - X) < hw + 3.2) eSt[i] = 1;",
      "if (eD[i] - front < 6 + EAGG[eTy[i]] && Math.abs(eX[i] - X) < hw + 3.2 + EAGG[eTy[i]] * 0.5) eSt[i] = 1;", 1),
     ("st = CHARGE_V * dt;", "st = CHARGE_V * ESPD[eTy[i]] * (eSlow[i] > 0 ? (eSlow[i] -= dt, 0.35) : 1) * dt;", 1),
@@ -622,6 +684,10 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("'</b></div></div>', LV === 1 ? 'NEXT STAGE'", "'</b></div>' + kitChip + '</div>', LV === 1 ? 'NEXT STAGE'", 1),
     ("} else showOverlay('DEFEATED', 'lose',", "} else { if (LV === 1) kitLose(); showOverlay('DEFEATED', 'lose',", 1),
     ("'RETRY');", "'RETRY'); }", 1),
+    # ---- novel mechanics: overdrive button + damage, key
+    ('<div id="unhide"></div>', '<div id="unhide"></div>\n  <button class="ib" id="bOD" title="Overdrive (F)"><span id="odF"></span><b id="odL">OVERDRIVE</b></button>', 1),
+    ("pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1);", "pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1) * (odT > 0 ? 1.5 : 1);", 1),
+    ("else if (k === 'q') {", "else if (k === 'f' || (k === ' ' && state === 'play')) overdrive();\n  else if (k === 'q') {", 1),
     # ---- endless progression + stars
     ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1)", 1),
     # a win on the bridge moves on to the next kit level; the original's stage 2 stays in its stage menu
@@ -629,7 +695,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "function primary() { if (state === 'won' && LV === 1) LI = kitNext(); startGame(); }", 1),
     ("<b>THE BRIDGE</b><span>GATES &middot; CAGE &middot; LASERS</span>", "<b>THE BRIDGE</b><span>ENDLESS &middot; 9 WEAPONS</span>", 1),
     ("get s() { return { LV,",
-     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
+     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, od, odT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
     (".map(g => ({ d: g.d, val: g.val }))", ".map(g => ({ d: g.d, val: g.val, kind: g.kind, label: g.label }))", 1),
     # ---- levels.js loads before the game
     ("<script>\n(function(){\n  var fill=", "<script src=\"levels.js\"></script>\n<script>\n(function(){\n  var fill=", 1),

@@ -138,4 +138,31 @@ window.BRIDGE_LEVELS = [
     final: { hp: 10000, wakeAt: 31 },
     stars: [150, 280],
   },
+  { // ? gates you can shoot open, prisoner pods in the horde, splitters, and overdrive to finish
+    name: 'STAGE 7', theme: 'aurora',
+    gates: [
+      { t: 1.8, every: 0.4, count: 14, val: 1 },
+      { t: 7.6, mystery: true, inside: { op: 'x', val: 2 } },
+      { t: 8.2, every: 0.4, count: 10, val: 2 },
+      { t: 12.4, mystery: true },
+      { t: 13.0, every: 0.4, count: 8, val: 2 },
+      { t: 16.4, buff: 'rate' },
+      { t: 17.0, mystery: true },
+      { t: 17.6, every: 0.4, count: 6, val: 2 },
+      { t: 23.0, every: 1.1, count: 3, val: 99 },
+    ],
+    horde: [
+      { x0: -6.05, x1: 2.85, d0: 17.5, d1: 32, gap: 0.62, type: 'grunt' },
+      { x0: -6.05, x1: 2.85, d0: 32.6, d1: 46, gap: 0.8, type: 'splitter' },
+      { x0: -6.05, x1: 2.85, d0: 46.6, d1: 62.6, gap: 0.62, type: 'grunt' },
+    ],
+    cage: { x: -4.4, d: 15.0, hp: 40, weapon: 'laser' },
+    hazards: [
+      { type: 'pod', x: -1.2, d: 21.0, hp: 14, n: 12 }, { type: 'pod', x: 1.6, d: 28.0, hp: 18, n: 15 },
+      { type: 'pod', x: -3.0, d: 37.0, hp: 22, n: 20 },
+    ],
+    bosses: [{ kind: 0, at: 11.0, ahead: 24 }, { kind: 1, at: 20.0, ahead: 26, hp: 1500 }],
+    final: { hp: 11000, wakeAt: 31 },
+    stars: [170, 320],
+  },
 ];
