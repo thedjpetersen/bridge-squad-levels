@@ -31,7 +31,7 @@
   try {
     const [html, patches] = await Promise.all([
       fetch(ORIGIN, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error('original game: HTTP ' + r.status); return r.text(); }),
-      fetch('patches.json').then(r => r.json()),
+      fetch('patches.json', { cache: 'no-cache' }).then(r => r.json()),   // always revalidate: the patches change whenever the original does
     ]);
     let src = html;
     for (const [from, to, n] of patches) {
@@ -40,6 +40,7 @@
       src = parts.join(to);
     }
     // three.js comes from the original site too; levels.js and the home link resolve next to this page
+    src = src.split('src="levels.js"').join('src="levels.js?v=' + Math.floor(Date.now() / 60000) + '"');   // skip stale cached copies of the levels
     src = src.split("x.open('GET','three.min.js')").join("x.open('GET','" + ORIGIN + "three.min.js')");
     src = src.split('</body>').join('<a href="' + ORIGIN + '" target="_blank" rel="noopener" style="position:fixed;left:8px;bottom:34px;z-index:9;font:700 11px Arial,sans-serif;color:rgba(255,255,255,.75);text-decoration:none;text-shadow:0 1px 2px #000">Original game by @noclipepe ↗</a></body>');
     document.open(); document.write(src); document.close();
