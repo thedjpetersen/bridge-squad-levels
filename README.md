@@ -4,7 +4,7 @@
 
 **Play it:** https://thedjpetersen.com/games/bridge-squad/
 
-This kit turns [Bridge Squad](https://noclipepe.pages.dev/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**. It also adds **weapons**, **gate types** and **enemy types**.
+This kit turns [Bridge Squad](https://noclipepe.pages.dev/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**, in both of its modes. It also adds **weapons**, **gate types** and **enemy types**.
 
 ![Eight themes: dusk, day, sunset, neon, toxic, frost, desert, storm](docs/themes.png)
 
@@ -70,11 +70,34 @@ Generated levels add two archetypes for these. **GAMBLE** (from level 7, theme `
 
 ![Menu, level grid, upgrade shop and a trap being shot up](docs/ui.png)
 
+## Flood Rescue campaign
+
+The original's second stage, **Flood Rescue**, shipped as one level. The kit makes it a campaign of its own with its own progress, stars and level grid (pick FLOOD RESCUE on the menu, then LEVELS). Seven flood levels are hand-made in `levels.js` as `window.FLOOD_LEVELS`. Every flood level after them is generated, and `?flood=N` links straight to one.
+
+| | |
+|---|---|
+| **Leaky tank** | `leak:` drains the tank every second, so you have to keep going back to the pump. |
+| **Sliding gates** | A gate with `vx:` slides from side to side while it rolls in. You chase it while you shoot it blue. |
+| **Jackpot gate** | A gate that starts deep red (e.g. −14) with a high `max:` (e.g. 14). It costs a lot of fire and is worth a lot of soldiers. |
+| **Mixed horde** | `mix: [['runner', 0.3]]` puts the kit's runners, brutes, bombers and splitters into the marching column. |
+| **More bosses** | `minis:` lists any number of brutes, each with a time, size (`kind` 0 or 1) and hp. `boss: { hp, speed, wake }` sets the final boss. |
+| **Overdrive and upgrades** | Overdrive works in flood levels too. BIGGER SQUAD, FASTER FIRE and HERO TRAINING carry over. Coins are earned in both modes. |
+
+Generated flood levels draw from LEAKY TANK, STAMPEDE (runners, faster march), SLIDING GATES, BRUTE SQUAD (two brutes), JACKPOT, BOMBERS and THE TITAN (big tank, big boss). Each has its own theme and a line on the menu that says what's different.
+
+```js
+{ name: 'FLOOD 4 · SLIDING GATES', theme: 'neon', callout: 'SLIDING GATES!',
+  gates: [{ t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -4, vx: -1.0 }, /* ... */],
+  boss: { hp: 650 }, stars: [9, 16] }
+```
+
+![Flood Rescue: the menu, its level grid, and levels 2, 4, 6 and 7](docs/flood.png)
+
 ## How the original works
 
 The game is one HTML page plus `three.min.js`. The game script is stored as text in `<script type="text/plain" id="main">` and runs once three.js has loaded. It uses no image or sound files: every mesh, texture and sound is generated in code.
 
-The original has a single level, written directly into `reset()` and `update()`. `build.py` applies 45 exact-match patches to read the level from data and to add the new mechanics. If the original page changes and an anchor no longer matches, the build fails instead of producing a broken game.
+The original has two stages, each written directly into code: the bridge in `reset()` and `update()`, Flood Rescue in `reset2()` and `step2()`. `build.py` applies 84 exact-match patches to read the level from data and to add the new mechanics. If the original page changes and an anchor no longer matches, the build fails instead of producing a broken game.
 
 ## Level format (`levels.js`)
 
@@ -196,6 +219,14 @@ A simple bot plays each level. It dodges traps and saws, breaks the cage, grabs 
 | 18 / 100 | BOOM | 210 / 192 | rapid / rail |
 | 33 | classic | 457 | rapid |
 | 45 | FROST | 245 | spread |
+
+A second bot plays Flood Rescue levels: it shoots gates blue and walks through them, pumps the tank, and fires overdrive at the boss.
+
+```sh
+node floodtest.mjs "http://127.0.0.1:8731/?flood=7"
+```
+
+It won every flood level it was given: hand-made 1–7, and generated 8, 9, 10, 13, 16, 18, 20, 25, 30, 50 and 100.
 
 These are bot results; difficulty for a human player hasn't been tuned by hand.
 

@@ -166,3 +166,69 @@ window.BRIDGE_LEVELS = [
     stars: [170, 320],
   },
 ];
+
+// Flood Rescue levels (the second mode). Any number past the end of this list is generated.
+// Units: x = across the plaza (gates sit between -4.4 and 4.4; the pump is at x = 6), d = distance up the lane
+// (gates appear at d = 13.5 and roll toward the squad at 1.2 d per second), t = seconds after start.
+// gates: { t, x, val (start value, negative = red), max (how high shooting can raise it), d, vx (slides side to side) }
+// mix: share of each enemy type in the horde column, e.g. [['runner', 0.2]]. minis: { t, kind (0 brute, 1 big brute), hp, cap }.
+// tank: water needed to fill it (stock 6.5). leak: how fast it drains. boss: { hp, speed, wake (seconds) }.
+window.FLOOD_LEVELS = [
+  { name: 'FLOOD 1' },   // the original stage, exactly as shipped
+  {
+    name: 'FLOOD 2 · LEAKY TANK', theme: 'storm', callout: 'LEAKY TANK!', leak: 0.012,
+    tip: 'The tank leaks.<br>Keep the pump going or the water drains away.',
+    gates: [
+      { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -4 }, { t: 9.5, x: -3.4, val: -5 }, { t: 14, x: 1.2, val: -6, max: 4 },
+      { t: 18.5, x: -2.0, val: -7 }, { t: 23, x: 2.8, val: -6, max: 4 }, { t: 27.5, x: -3.6, val: -8 }, { t: 32, x: 0.6, val: -8, max: 4 },
+    ],
+    boss: { hp: 560 }, stars: [9, 16],
+  },
+  {
+    name: 'FLOOD 3 · STAMPEDE', theme: 'sunset', callout: 'STAMPEDE!', march: 1.15, mix: [['runner', 0.3]],
+    tip: 'Runners in the column.<br>Grow the squad fast.',
+    gates: [
+      { t: 0, x: -2.0, val: -3, d: 10.2, max: 4 }, { t: 4, x: 2.4, val: -4, max: 4 }, { t: 8.5, x: -3.0, val: -5, max: 4 }, { t: 13, x: 1.6, val: -5 },
+      { t: 17.5, x: -1.6, val: -7, max: 4 }, { t: 22, x: 3.0, val: -6 }, { t: 26.5, x: -3.4, val: -8, max: 4 }, { t: 31, x: 0.8, val: -8 },
+    ],
+    boss: { hp: 620, speed: 2.2 }, stars: [10, 17],
+  },
+  {
+    name: 'FLOOD 4 · SLIDING GATES', theme: 'neon', callout: 'SLIDING GATES!',
+    tip: 'The gates slide side to side.<br>Chase them while you shoot.',
+    gates: [
+      { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -4, vx: -1.0 }, { t: 9.5, x: -3.0, val: -6, vx: 1.2 }, { t: 14, x: 1.0, val: -5, max: 4, vx: -1.4 },
+      { t: 18.5, x: -2.0, val: -8, max: 4, vx: 1.3 }, { t: 23, x: 2.8, val: -6, vx: -1.6 }, { t: 27.5, x: -3.8, val: -9, max: 4, vx: 1.5 }, { t: 32, x: 0.6, val: -8, vx: -1.8 },
+    ],
+    boss: { hp: 650 }, stars: [9, 16],
+  },
+  {
+    name: 'FLOOD 5 · BRUTE SQUAD', theme: 'desert', callout: 'BRUTES!', mix: [['brute', 0.1]],
+    tip: 'Two brutes and a tougher column.<br>Free a hero before the second one lands.',
+    minis: [{ t: 13, hp: 130, cap: 4 }, { t: 25, kind: 1, hp: 220, cap: 5 }],
+    gates: [
+      { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 4.5, x: 2.6, val: -4, max: 4 }, { t: 9, x: -3.4, val: -6 }, { t: 13.5, x: 1.0, val: -5, max: 4 },
+      { t: 18, x: -2.0, val: -8, max: 4 }, { t: 22.5, x: 2.8, val: -6 }, { t: 27, x: -3.6, val: -9, max: 4 }, { t: 31.5, x: 0.6, val: -8, max: 4 },
+    ],
+    boss: { hp: 720, wake: 29 }, stars: [10, 18],
+  },
+  {
+    name: 'FLOOD 6 · JACKPOT', theme: 'aurora', callout: 'JACKPOT GATE!', mix: [['bomber', 0.12]],
+    tip: 'One deep red gate is worth a fortune.<br>Pour everything into it.',
+    gates: [
+      { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -5 }, { t: 9.5, x: 0, val: -14, max: 14, d: 15 }, { t: 15, x: -3.0, val: -6, max: 4 },
+      { t: 19.5, x: 2.0, val: -8 }, { t: 24, x: -2.6, val: -7, max: 4 }, { t: 28.5, x: 3.0, val: -9 }, { t: 33, x: -0.6, val: -8, max: 4 },
+    ],
+    boss: { hp: 800, wake: 29 }, d1: 82, stars: [14, 24],
+  },
+  {
+    name: 'FLOOD 7 · THE TITAN', theme: 'frost', callout: 'THE TITAN!', tank: 8.5, march: 1.1, mix: [['runner', 0.08], ['brute', 0.05]],
+    tip: 'A huge tank and a huge boss.<br>Free both heroes.',
+    minis: [{ t: 14, hp: 160, cap: 4 }, { t: 26, kind: 1, hp: 320, cap: 5 }],
+    gates: [
+      { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 4.5, x: 2.6, val: -5, max: 4 }, { t: 9, x: -3.4, val: -6, max: 4, vx: 0.9 }, { t: 13.5, x: 1.0, val: -6, max: 4 },
+      { t: 18, x: -2.0, val: -8, max: 5 }, { t: 22.5, x: 2.8, val: -7, max: 4, vx: -1.1 }, { t: 27, x: -3.6, val: -9, max: 5 }, { t: 31.5, x: 0.6, val: -9, max: 4 }, { t: 36, x: -1.4, val: -10, max: 5 },
+    ],
+    boss: { hp: 1150, speed: 2.2, wake: 33 }, d1: 86, stars: [12, 22],
+  },
+];

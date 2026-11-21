@@ -39,13 +39,13 @@ const PFX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2];                            
 let W = WEAPONS.rifle, wName = 'rifle', frenzyT = 0, shieldT = 0, shieldFx = 0, od = 0, odT = 0, odFx = 0, odShown = -1;
 function odUI() { // the overdrive button: fills with kills, glows when ready
   const b = $('bOD'); if (!b) return;
-  const show = LV === 1 && state === 'play', v = odT > 0 ? -1 : Math.round(od * 40);
+  const show = state === 'play', v = odT > 0 ? -1 : Math.round(od * 40);
   b.style.display = show ? 'flex' : 'none'; if (!show || v === odShown) return; odShown = v;
   b.classList.toggle('ready', od >= 1 && odT <= 0); b.classList.toggle('on', odT > 0);
   $('odF').style.width = (odT > 0 ? 100 : od * 100) + '%'; $('odL').textContent = odT > 0 ? 'OVERDRIVE!' : od >= 1 ? 'OVERDRIVE ▶' : 'OVERDRIVE';
 }
 function overdrive() {
-  if (LV !== 1 || state !== 'play' || od < 1 || odT > 0) return;
+  if (state !== 'play' || od < 1 || odT > 0) return;
   odT = 4; shieldT = Math.max(shieldT, 4); fovK = 1; shake = Math.max(shake, 0.4); sfx.power(); sfx.gate99();
   popup('OVERDRIVE!', clamp(X, -2, 2), 3.6, D + 2, '#ffe14a', '#5a2a00', 3.0, 1.2, 1.4); ring(X, D, 0.5, 9, 0.5, 0xffc020); burst(X, 1, D, 80, 11, 2.5, 1.8, 0.3, 1.2, 0.6, -4, 4);
   $('flash').style.transition = 'none'; $('flash').style.opacity = 0.5; requestAnimationFrame(() => { $('flash').style.transition = 'opacity .5s'; $('flash').style.opacity = 0; });
@@ -417,7 +417,7 @@ const KIT_KEY = 'bridge-squad-kit-v1';
 const SAVE = (() => {
   let s = null; try { s = JSON.parse(localStorage.getItem(KIT_KEY)); } catch (e) {}
   s = s && typeof s === 'object' ? s : {};
-  return { max: s.max | 0, coins: s.coins | 0, stars: s.stars || {}, daily: s.daily || {}, up: Object.assign({ squad: 0, rate: 0, dmg: 0, cage: 0, hero: 0 }, s.up) };
+  return { max: s.max | 0, coins: s.coins | 0, stars: s.stars || {}, daily: s.daily || {}, fmax: s.fmax | 0, fstars: s.fstars || {}, up: Object.assign({ squad: 0, rate: 0, dmg: 0, cage: 0, hero: 0 }, s.up) };
 })();
 function persist() { try { localStorage.setItem(KIT_KEY, JSON.stringify(SAVE)); } catch (e) {} }
 const UPGRADES = [
@@ -433,9 +433,10 @@ function kitApplyUpgrades() { const u = SAVE.up; if (u.squad) addSoldiers(u.squa
 const DAY = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000), DAILY_I = 1e6 + DAY, isDaily = i => i >= 1e6;
 const DAY_LABEL = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
 function kitWin(st) {
-  const daily = isDaily(LI), gain = 10 + st * 10 + Math.floor(kills / 40) + (daily ? 40 : 0);
+  const daily = LV === 1 && isDaily(LI), gain = 10 + st * 10 + Math.floor(kills / 40) + (daily ? 40 : 0);
   SAVE.coins += gain;
-  if (daily) SAVE.daily[DAY] = Math.max(SAVE.daily[DAY] | 0, st);
+  if (LV === 2) { SAVE.fstars[FI] = Math.max(SAVE.fstars[FI] | 0, st); SAVE.fmax = Math.max(SAVE.fmax, FI + 1); }
+  else if (daily) SAVE.daily[DAY] = Math.max(SAVE.daily[DAY] | 0, st);
   else { SAVE.stars[LI] = Math.max(SAVE.stars[LI] | 0, st); SAVE.max = Math.max(SAVE.max, LI + 1); }
   persist(); kitUI();
   return '<div class="chip">COINS<b>+' + gain + '</b></div>';
@@ -444,9 +445,9 @@ function kitLose() { const gain = Math.floor(kills / 60); if (gain) { SAVE.coins
 function kitNext() { return isDaily(LI) ? SAVE.max : LI + 1; }
 function kitToast(t) { const e = $('kitt'); e.textContent = t; e.classList.add('show'); clearTimeout(kitToast.t); kitToast.t = setTimeout(() => e.classList.remove('show'), 1800); }
 async function kitShare() {
-  const daily = isDaily(LI), url = location.origin + location.pathname + (daily ? '?daily=1' : '?level=' + (LI + 1));
-  const st = daily ? SAVE.daily[DAY] | 0 : SAVE.stars[LI] | 0, won = state === 'won';
-  const text = (won ? 'I beat ' + L.name + ' in Bridge Squad: Endless with ' + N + ' soldiers ' + '★'.repeat(st) + '☆'.repeat(3 - st) : 'Can you beat ' + L.name + ' in Bridge Squad: Endless?');
+  const fl = LV === 2, daily = !fl && isDaily(LI), url = location.origin + location.pathname + (fl ? '?flood=' + (FI + 1) : daily ? '?daily=1' : '?level=' + (LI + 1));
+  const st = fl ? SAVE.fstars[FI] | 0 : daily ? SAVE.daily[DAY] | 0 : SAVE.stars[LI] | 0, won = state === 'won', name = fl ? F.name : L.name;
+  const text = (won ? 'I beat ' + name + ' in Bridge Squad: Endless with ' + N + ' soldiers ' + '★'.repeat(st) + '☆'.repeat(3 - st) : 'Can you beat ' + name + ' in Bridge Squad: Endless?');
   try { if (navigator.share) { await navigator.share({ title: 'Bridge Squad: Endless', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
   try { await navigator.clipboard.writeText(text + ' ' + url); kitToast('LINK COPIED'); } catch (e) { kitToast(url); }
 }
@@ -457,6 +458,7 @@ function kitUI() {
 }
 function kitPanel(html) { const p = $('kitp'); p.innerHTML = html ? '<div class="kpi">' + html + '<button class="kb kclose">CLOSE</button></div>' : ''; p.classList.toggle('show', !!html); }
 function kitLevels() {
+  if (LV === 2) return floodLevels();
   const n = Math.max(SAVE.max + 1, 12), cells = [];
   for (let i = 0; i < n; i++) {
     const open = i <= SAVE.max, st = SAVE.stars[i] | 0, tag = open ? (getLevel(i).name.split(' · ')[1] || (i < HAND_LEVELS.length ? 'HANDMADE' : 'CLASSIC')) : 'LOCKED';
@@ -479,7 +481,7 @@ document.addEventListener('click', e => {
   else if (t.id === 'kShare') kitShare();
   else if (t.id === 'kDaily') { kitPanel(''); LV = 1; LI = DAILY_I; startGame(); }
   else if (t.classList.contains('kclose')) kitPanel('');
-  else if (t.classList.contains('kl')) { kitPanel(''); LV = 1; LI = +t.dataset.i; startGame(); }
+  else if (t.classList.contains('kl')) { kitPanel(''); if (t.dataset.f != null) { LV = 2; FI = +t.dataset.f; } else { LV = 1; LI = +t.dataset.i; } startGame(); }
   else if (t.classList.contains('kbuy')) {
     const u = UPGRADES.find(q => q.id === t.dataset.u), lv = SAVE.up[u.id], cost = upCost(lv);
     if (lv < u.max && SAVE.coins >= cost) { SAVE.coins -= cost; SAVE.up[u.id] = lv + 1; persist(); initAudio(); sfx.power(); kitShop(); kitUI(); }
@@ -508,7 +510,7 @@ kitUI();
 
 APPLY_LEVEL = r"""function applyLevel() {
   L = getLevel(LI); eTy.fill(0); eSlow.fill(0); frenzyT = shieldT = 0;
-  if (LV !== 1) { buildHazards([]); applyTheme('dusk'); return; }   // the original's stage 2 (Flood Rescue) is left as it is
+  if (LV !== 1) { applyFlood(); return; }   // the original's stage 2: Flood Rescue levels
   CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = Math.max(5, Math.round(L.cage.hp * (1 - SAVE.up.cage * 0.08)));
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
   W = WEAPONS.rifle; wName = 'rifle'; frenzyT = shieldT = 0; od = odT = 0; odShown = -1;
@@ -516,7 +518,7 @@ APPLY_LEVEL = r"""function applyLevel() {
   fancyText(lc, cw.label, 320, 80, cw.label.length > 8 ? 92 : 108, '#ffe23a', '#6a0a56', 22); lblCrate.tex.needsUpdate = true;
   buildHazards(L.hazards);
   applyTheme(L.theme);
-  try { const u = new URL(location.href); if (!location.hash) { if (isDaily(LI)) { u.searchParams.delete('level'); u.searchParams.set('daily', '1'); } else { u.searchParams.delete('daily'); u.searchParams.set('level', LI + 1); } if (u.href !== location.href) history.replaceState(null, '', u); } } catch (e) {}
+  try { const u = new URL(location.href); if (!location.hash) { u.searchParams.delete('flood'); if (isDaily(LI)) { u.searchParams.delete('level'); u.searchParams.set('daily', '1'); } else { u.searchParams.delete('daily'); u.searchParams.set('level', LI + 1); } if (u.href !== location.href) history.replaceState(null, '', u); } } catch (e) {}
 }
 function reset() {
   applyLevel();
@@ -544,6 +546,113 @@ HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room aroun
   for (const g of L.gates) for (let j = 0; j < g.count; j++) gates.push(makeGate(g, g.t + g.every * j));
   gates.sort((a, b) => a.d - b.d);
 """
+
+# ================================================================== Flood Rescue levels
+FLOOD = r"""
+// ---- Flood Rescue (the original's stage 2) as a campaign: hand-made levels from levels.js, then generated ones.
+// A flood level: gates [{t, x, val, d, max, vx}], horde lane length d1 / spacing gap / grunt hp / mix [[type, share]],
+// mini-bosses [{t, kind, hp, cap}], boss {hp, speed, wake}, tank (volume to fill), leak (per second), pump (lift per hit),
+// march (horde speed), gateV (gate speed), start (squad), stars [2-star squad, 3-star squad], tip (menu line), callout.
+const STOCK_GATES2 = [[0, -2.4, -5, 10.2, 4], [5, 2.6, -4, 13.5, 3], [9.5, -3.6, -6, 13.5, 3], [14, 1.0, -5, 13.5, 3], [18.5, -2.0, -8, 13.5, 3], [23, 2.8, -6, 13.5, 3], [27.5, -3.8, -9, 13.5, 3], [32, 0.6, -8, 13.5, 3]];
+const FLOOD_DEF = { name: 'FLOOD 1', theme: 'dusk', march: 1, gateV: 1.2, pump: 0.1, tank: 6.5, leak: 0, d1: 77, gap: 1, hp: 1, mix: [], start: 1,
+  minis: [{ t: 14, kind: 0, hp: 100, cap: 4 }], boss: { hp: 500, speed: 2, wake: 27 }, stars: [9, 15], tip: '', callout: '' };
+function normFlood(v, i) {
+  const o = Object.assign({}, FLOOD_DEF, v); o.boss = Object.assign({}, FLOOD_DEF.boss, v.boss); if (!v.name) o.name = 'FLOOD ' + (i + 1);
+  o.gates = (v.gates || STOCK_GATES2.map(g => ({ t: g[0], x: g[1], val: g[2], d: g[3], max: g[4] })))
+    .map(g => Array.isArray(g) ? g : [g.t || 0, g.x || 0, g.val == null ? -5 : g.val, g.d || 13.5, g.max || 3, g.vx || 0]).sort((a, b) => a[0] - b[0]);
+  o.minis = (o.minis || []).map(m => Object.assign({ kind: 0, hp: 100, cap: 4, speed: 2 }, m));
+  o.mix = (o.mix || []).map(m => [typeof m[0] === 'string' ? ETYPE[m[0]] | 0 : m[0], m[1]]);
+  return o;
+}
+const FLOOD_ARCH = [ // [id, HUD name, first level, theme, callout, menu tip]
+  ['flood', '', 1, 'dusk', '', 'Shoot red gates blue, then walk through them.<br>Pump the tank full to free the heroes.'],
+  ['leaky', 'LEAKY TANK', 2, 'storm', 'LEAKY TANK!', 'The tank leaks.<br>Keep the pump going or the water drains away.'],
+  ['stampede', 'STAMPEDE', 3, 'sunset', 'STAMPEDE!', 'Runners in the column.<br>Grow the squad fast.'],
+  ['sliders', 'SLIDING GATES', 4, 'neon', 'SLIDING GATES!', 'The gates slide side to side.<br>Chase them while you shoot.'],
+  ['brutes', 'BRUTE SQUAD', 5, 'desert', 'BRUTES!', 'Two brutes and a tougher column.<br>Free a hero before the second one lands.'],
+  ['jackpot', 'JACKPOT', 6, 'aurora', 'JACKPOT GATE!', 'One deep red gate is worth a fortune.<br>Pour everything into it.'],
+  ['bombers', 'BOMBERS', 7, 'toxic', 'BOMBERS!', 'Green bombers blow up when they die.<br>Use them to clear the column.'],
+  ['titan', 'THE TITAN', 8, 'frost', 'THE TITAN!', 'A huge tank and a huge boss.<br>Free both heroes.'],
+];
+function generateFlood(n, seed) {
+  const R = rng(seed == null ? n * 104729 + 17 : seed), k = Math.min(1, (n - 1) / 24), pick = a => a[(R() * a.length) | 0];
+  const pool = FLOOD_ARCH.filter(a => a[2] <= n && (a[0] !== 'flood' || n < 12)), A = pick(pool), id = A[0];
+  // gates: one every 4-5 s, deeper red and higher caps as the levels go on
+  const gates = [], ng = 8 + Math.floor(k * 3) + (id === 'stampede' ? 1 : 0); let t = 0;
+  for (let i = 0; i < ng; i++) {
+    const max = 3 + (R() < 0.25 + k * 0.4 ? 1 : 0) + (R() < k * 0.3 ? 1 : 0), val = -(4 + Math.floor(R() * (3 + k * 4)) + (i > ng / 2 ? 1 : 0));
+    const x = +((i % 2 ? 1 : -1) * (0.6 + R() * 3.2)).toFixed(1), vx = id === 'sliders' || (n > 10 && R() < k * 0.25) ? +((R() < 0.5 ? -1 : 1) * (0.8 + R() * 0.9 + k * 0.5)).toFixed(2) : 0;
+    gates.push([+t.toFixed(1), x, i === 0 ? -4 : val, i === 0 ? 10.2 : 13.5, i === 0 ? 4 : max, vx]);
+    t += 4.2 + R() * 0.9 - k * 0.5;
+  }
+  if (id === 'jackpot' || (n > 12 && R() < 0.3)) { const j = 2 + Math.floor(R() * 3); gates[j][2] = -(12 + Math.floor(k * 6)); gates[j][4] = 12 + Math.floor(k * 8); gates[j][1] = 0; }
+  const mix = [];
+  if (id === 'stampede') mix.push(['runner', 0.25 + k * 0.1]);
+  if (id === 'brutes') mix.push(['brute', 0.08 + k * 0.05]);
+  if (id === 'bombers') mix.push(['bomber', 0.16], ['splitter', 0.06 + k * 0.05]);
+  if (n > 9 && id !== 'stampede') mix.push(['runner', 0.06 + k * 0.08]);
+  if (n > 14 && id !== 'brutes') mix.push(['brute', 0.03 + k * 0.03]);
+  const minis = [{ t: 13 + R() * 3, kind: 0, hp: Math.round(100 + 140 * k), cap: 4 }];
+  if (id === 'brutes' || n > 11) minis.push({ t: 24 + R() * 4, kind: id === 'titan' || n > 16 ? 1 : 0, hp: Math.round(160 + 260 * k), cap: 5 });
+  if (id === 'titan') minis[0].hp += 60;
+  const wake = 27 + Math.round(k * 6 + (id === 'titan' ? 3 : 0));
+  const pot = 1 + gates.reduce((a, g) => a + g[4], 0);
+  return { name: 'FLOOD ' + n + (A[1] ? ' · ' + A[1] : ''), archetype: id, generated: true, theme: id === 'flood' ? pick(['dusk', 'day', 'dawn']) : A[3], tip: A[5], callout: A[4], gates, mix, minis,
+    march: +(1 + k * 0.3 + (id === 'stampede' ? 0.15 : 0)).toFixed(2), tank: +(6.5 + k * 1.5 + (id === 'titan' ? 1.5 : 0)).toFixed(1), leak: id === 'leaky' ? +(0.012 + k * 0.012).toFixed(3) : n > 15 && R() < 0.3 ? 0.008 : 0,
+    d1: 77 + Math.round(k * 12), hp: 1, boss: { hp: Math.round((520 + 1100 * k) * (id === 'titan' ? 1.4 : 1) / 10) * 10, speed: +(2 + k * 0.4).toFixed(2), wake },
+    stars: [Math.round(pot * 0.32), Math.round(pot * 0.55)] };
+}
+const FLOODS = (window.FLOOD_LEVELS && window.FLOOD_LEVELS.length) ? window.FLOOD_LEVELS : [{}], floodCache = [];
+function getFlood(i) { return floodCache[i] || (floodCache[i] = normFlood(i < FLOODS.length ? FLOODS[i] : generateFlood(i + 1), i)); }
+window.__floodLevel = i => getFlood(i - 1);
+let FI = QS.get('flood') ? Math.max(0, (parseInt(QS.get('flood'), 10) || 1) - 1) : SAVE.fmax, F = null, miniQ = [], floodTold = false;
+if (QS.has('flood')) LV = 2;
+function applyFlood() {
+  F = getFlood(FI); buildHazards([]); applyTheme(F.theme); od = odT = 0; odShown = -1; frenzyT = shieldT = 0; floodTold = false;
+  MARCH_V = F.march; G2_V = F.gateV; PUMP_LIFT = F.pump; TANK_CAP = F.tank; T_BOSS = F.boss.wake; GATE2_PLAN = F.gates;
+  try { const u = new URL(location.href); if (!location.hash) { u.searchParams.delete('level'); u.searchParams.delete('daily'); u.searchParams.set('flood', FI + 1); if (u.href !== location.href) history.replaceState(null, '', u); } } catch (e) {}
+}
+function floodStart() { const u = SAVE.up, n = F.start - 1 + u.squad * 2; if (n > 0) addSoldiers(n, X, -0.5, 0.7); heroMul *= 1 + u.hero * 0.2; rateMul = 1 / (1 + u.rate * 0.05); }
+function floodType() { let r = Math.random(); for (const m of F.mix) { if (r < m[1]) return m[0]; r -= m[1]; } return 0; }
+function floodSub() { return '<b>' + F.name + '</b><br>' + (F.tip || 'Shoot red gates until they turn blue.<br>Shoot the pump to flood the tank and free the heroes.'); }
+function floodLevels() {
+  const n = Math.max(SAVE.fmax + 1, 12), cells = [];
+  for (let i = 0; i < n; i++) {
+    const open = i <= SAVE.fmax, st = SAVE.fstars[i] | 0, tag = open ? (getFlood(i).name.split(' · ')[1] || (i < FLOODS.length ? 'HANDMADE' : 'CLASSIC')) : 'LOCKED';
+    cells.push('<button class="kl fl' + (open ? '' : ' lock') + (i === FI ? ' cur' : '') + '" data-f="' + i + '"' + (open ? '' : ' disabled') + '><b>' + (i + 1) + '</b><i>' + tag + '</i><u>' + '★'.repeat(st) + '<s>' + '★'.repeat(3 - st) + '</s></u></button>');
+  }
+  kitPanel('<h3>FLOOD RESCUE</h3><div class="kgrid">' + cells.join('') + '</div>');
+}
+"""
+
+FLOOD_PATCHES = [
+    ("const TANK_X0 = -10.0, TANK_X1", "let TANK_X0 = -10.0, TANK_X1", 1),
+    ("const MARCH_V = 1.0, G2_V = 1.2,", "let MARCH_V = 1.0, G2_V = 1.2,", 1),
+    ("const GATE2_PLAN = [", "let GATE2_PLAN = [", 1),
+    ("for (let i = 0; i < 7; i++) {\n  const grp = new THREE.Group(); grp.visible = false; W2.add(grp);", "for (let i = 0; i < 10; i++) {\n  const grp = new THREE.Group(); grp.visible = false; W2.add(grp);", 1),
+    ("function spawnGate2(x, val, d, max) {", "function spawnGate2(x, val, d, max, vx = 0) {", 1),
+    ("g.x = x; g.d = d; g.val = val; g.max = max;", "g.x = x; g.d = d; g.val = val; g.max = max; g.vx = vx;", 1),
+    ("spawnGate2(p[1], p[2], p[3], p[4]); }", "spawnGate2(p[1], p[2], p[3], p[4], p[5] || 0); }", 1),
+    ("    if (g.state === 0) {\n      g.d -= G2_V * dt;",
+     "    if (g.state === 0) {\n      g.d -= G2_V * dt;\n      if (g.vx) { g.x += g.vx * dt; if (Math.abs(g.x) > 4.4) { g.x = Math.sign(g.x) * 4.4; g.vx = -g.vx; } }   // sliding gates", 1),
+    # the horde lane: length, spacing, toughness and a mix of the kit's enemy types
+    ("  for (let d = P2_D1 + 0.8; d <= 77 && E < MAXE - 9; d += HSP) for (let x = -2.6; x <= 2.61; x += 0.65) {",
+     "  for (let d = P2_D1 + 0.8; d <= F.d1 && E < MAXE - 9; d += HSP * F.gap) for (let x = -2.6; x <= 2.61; x += 0.65) {", 1),
+    ("eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = 1; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;\n  }\n  wh.fill(0);",
+     "const ty = d < P2_D1 + 6 ? 0 : floodType(); eX[E] = x + rand(-0.13, 0.13); eD[E] = d + rand(-0.13, 0.13); eHp[E] = ty ? EHP[ty] : F.hp; eTy[E] = ty; eSlow[E] = 0; eSt[E] = 0; ePh[E] = Math.random() * TAU; E++;\n  }\n  wh.fill(0);", 1),
+    ("b.hp = b.max = b.ghost = 500; b.speed = 2.0; b.vxk = 2.2;", "b.hp = b.max = b.ghost = F.boss.hp; b.speed = F.boss.speed; b.vxk = 2.2;", 1),
+    ("  gPlan = 0; miniUp = false;\n", "  gPlan = 0; miniUp = false; miniQ = F.minis.map(m => Object.assign({ done: false }, m));\n", 1),
+    ("  if (!miniUp && gt >= T_MINI) { miniUp = true; const b = spawnBoss(0, 0, 33, false); b.active = true; b.hp = b.max = b.ghost = 100; b.speed = 2.0; b.cap = 4; b.vxk = 2.2; b.roar = b.roarD = 0.7; sfx.roar(); }",
+     "  for (const q of miniQ) if (!q.done && gt >= q.t) { q.done = true; miniUp = true; const b = spawnBoss(q.kind, 0, 33, false); b.active = true; b.hp = b.max = b.ghost = q.hp; b.speed = q.speed; b.cap = q.cap; b.vxk = 2.2; b.roar = b.roarD = 0.7; sfx.roar(); }\n"
+     "  if (!floodTold && gt > 0.6) { floodTold = true; if (F.callout) popup(F.callout, 0, 3.6, 6, '#ffe14a', '#3a1d00', 2.2, 1.6, 1.0); }", 1),
+    # a leaky tank drains unless you keep pumping
+    ("  } else tank.level = Math.min(1, tank.level + tank.inflow * dt / TANK_CAP);",
+     "  } else {\n    const lk = play && tank.phase !== 3 ? F.leak : 0;\n    tank.level = clamp(tank.level + (tank.inflow / TANK_CAP - lk) * dt, Math.min(tank.level, 0.14), 1);\n"
+     "    if (lk && tank.level > 0.16 && PT < MAXPT - 300 && Math.random() < dt * 12) burst(TCX + rand(-2, 2), 0.35, TANK_D0 - 0.35, 2, 3.0, 1.5, 2.0, 2.4, 0.5, 0.35, -8, 1.0);\n  }", 1),
+    # menu, stage card
+    ("showOverlay('BRIDGE<br>SQUAD', '', MENU_SUB[LV - 1],", "showOverlay('BRIDGE<br>SQUAD', '', LV === 2 && F ? floodSub() : MENU_SUB[LV - 1],", 1),
+    ("<b>FLOOD RESCUE</b><span>PUMP &middot; TANK &middot; ICE</span>", "<b>FLOOD RESCUE</b><span>ENDLESS &middot; PUMP &middot; TANK</span>", 1),
+]
 
 KIT_CSS = r'''
   #kit{display:none;gap:.4em;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:.9em;max-width:94%}
@@ -592,7 +701,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- level data
     ("const CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", "let CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", 1),
     ("let E = 0;\n", "let E = 0;\nconst eTy = new Uint8Array(MAXE), eSlow = new Float32Array(MAXE);\n", 1),
-    ("let crackT = 0;\n", "let crackT = 0;\n" + RUNTIME, 1),
+    ("let crackT = 0;\n", "let crackT = 0;\n" + RUNTIME + FLOOD, 1),
     ("function reset() {\n", APPLY_LEVEL, 1),
     (HORDE_OLD, HORDE_NEW, 1),
     ("bosses.length = 0; spawned1 = spawned2 = false;",
@@ -607,7 +716,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "    for (const q of bossQ) if (!q.done && D >= q.at) { q.done = true; spawnBoss(q.kind, clamp(X + q.dx, -4, 1.5), D + q.ahead, true, q); }\n", 1),
     ("if (!b.active) { if (LV === 1 ? D >= 29 : gt >= T_BOSS)", "if (!b.active) { if (LV === 1 ? D >= L.final.wakeAt : gt >= T_BOSS)", 1),
     ("clamp(LV === 1 ? D / 29 : gt / T_BOSS, 0, 1)", "clamp(LV === 1 ? D / L.final.wakeAt : gt / T_BOSS, 0, 1)", 1),
-    ("$('hudL').textContent = 'STAGE ' + LV;", "$('hudL').textContent = LV === 1 ? L.name : 'FLOOD RESCUE';", 1),
+    ("$('hudL').textContent = 'STAGE ' + LV;", "$('hudL').textContent = LV === 1 ? L.name : F.name;", 1),
     ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt);", 1),
     # ---- gates: any label, colour per kind, special effects
     ("c = g.val === 1 ? GLASS_B : GLASS_Y, gc = g.val === 1 ? GLOW_B : GLOW_Y", "c = g.glass, gc = g.glow", 1),
@@ -634,7 +743,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
     ("sCd[i] += FIRE_T; sKick[i] = 1; fire(sX[i] + mzX, sD[i] + mzD, sType);",
-     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1) * (odT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T; fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
+     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1) * (odT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T * rateMul * (odT > 0 ? 0.5 : 1); fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
     ("const pw = (HEROT[ty] ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
     ("    if (!dead) for (const b of bosses) {",
      "    if (!dead && LV === 1) for (const g of gates) if (g.alive && g.shoot && g.sv < g.cap && d1 >= g.d - 0.35 && d0 <= g.d + 0.35 && Math.abs(x - g.x) < GATE_HW) { shootGate(g, dmg, x); dead = true; break; }\n"
@@ -658,7 +767,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- enemy types and status effects
     ("function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;",
      "function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;\n"
-     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off\n  if (eTy[i] === 4) { eTy[i] = 0; for (let k = 0; k < 2 && E < MAXE; k++, E++) { eX[E] = eX[i] + (k ? 0.4 : -0.4); eD[E] = eD[i] + rand(-0.2, 0.2); eHp[E] = 1; eTy[E] = 0; eSlow[E] = 0; eSt[E] = eSt[i]; ePh[E] = Math.random() * TAU; } burst(eX[i], 0.8, eD[i], 8, 5, 1.6, 0.5, 2.4, 0.7, 0.3, -5, 2); }   // splitters split\n  if (LV === 1 && state === 'play' && odT <= 0) od = Math.min(1, od + 1 / 90);   // kills charge overdrive", 1),
+     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off\n  if (eTy[i] === 4) { eTy[i] = 0; for (let k = 0; k < 2 && E < MAXE; k++, E++) { eX[E] = eX[i] + (k ? 0.4 : -0.4); eD[E] = eD[i] + rand(-0.2, 0.2); eHp[E] = 1; eTy[E] = 0; eSlow[E] = 0; eSt[E] = eSt[i]; ePh[E] = Math.random() * TAU; } burst(eX[i], 0.8, eD[i], 8, 5, 1.6, 0.5, 2.4, 0.7, 0.3, -5, 2); }   // splitters split\n  if (state === 'play' && odT <= 0) od = Math.min(1, od + 1 / 90);   // kills charge overdrive", 1),
     ("if (eD[i] - front < 6 && Math.abs(eX[i] - X) < hw + 3.2) eSt[i] = 1;",
      "if (eD[i] - front < 6 + EAGG[eTy[i]] && Math.abs(eX[i] - X) < hw + 3.2 + EAGG[eTy[i]] * 0.5) eSt[i] = 1;", 1),
     ("st = CHARGE_V * dt;", "st = CHARGE_V * ESPD[eTy[i]] * (eSlow[i] > 0 ? (eSlow[i] -= dt, 0.35) : 1) * dt;", 1),
@@ -679,27 +788,29 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("</style>", KIT_CSS + "</style>", 1),
     ("if (e.target.closest('.ib') || e.target.id === 'unhide') return;",
      "if (e.target.closest('.ib') || e.target.closest('#kit') || e.target.closest('#kitp') || e.target.id === 'unhide') return;", 1),
-    ("  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;", "  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;\n  if (LV === 1) kitApplyUpgrades();", 1),
-    ("saveBest(st);", "saveBest(st); const kitChip = LV === 1 ? kitWin(st) : '';", 1),
-    ("'</b></div></div>', LV === 1 ? 'NEXT STAGE'", "'</b></div>' + kitChip + '</div>', LV === 1 ? 'NEXT STAGE'", 1),
-    ("} else showOverlay('DEFEATED', 'lose',", "} else { if (LV === 1) kitLose(); showOverlay('DEFEATED', 'lose',", 1),
+    ("  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;", "  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;\n  if (LV === 1) kitApplyUpgrades(); else floodStart();", 1),
+    ("saveBest(st);", "saveBest(st); const kitChip = kitWin(st);", 1),
+    ("'</b></div></div>', LV === 1 ? 'NEXT STAGE' : 'PLAY AGAIN'", "'</b></div>' + kitChip + '</div>', LV === 1 ? 'NEXT STAGE' : 'NEXT FLOOD'", 1),
+    ("} else showOverlay('DEFEATED', 'lose',", "} else { kitLose(); showOverlay('DEFEATED', 'lose',", 1),
     ("'RETRY');", "'RETRY'); }", 1),
     # ---- novel mechanics: overdrive button + damage, key
     ('<div id="unhide"></div>', '<div id="unhide"></div>\n  <button class="ib" id="bOD" title="Overdrive (F)"><span id="odF"></span><b id="odL">OVERDRIVE</b></button>', 1),
     ("pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1);", "pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1) * (odT > 0 ? 1.5 : 1);", 1),
     ("else if (k === 'q') {", "else if (k === 'f' || (k === ' ' && state === 'play')) overdrive();\n  else if (k === 'q') {", 1),
     # ---- endless progression + stars
-    ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1)", 1),
+    ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1) : (N >= 15 ? 3 : N >= 9 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1) : (N >= F.stars[1] ? 3 : N >= F.stars[0] ? 2 : 1)", 1),
     # a win on the bridge moves on to the next kit level; the original's stage 2 stays in its stage menu
     ("function primary() { if (state === 'won' && LV === 1) startLevel(2); else startGame(); }",
-     "function primary() { if (state === 'won' && LV === 1) LI = kitNext(); startGame(); }", 1),
+     "function primary() { if (state === 'won') { if (LV === 1) LI = kitNext(); else FI++; } startGame(); }", 1),
     ("<b>THE BRIDGE</b><span>GATES &middot; CAGE &middot; LASERS</span>", "<b>THE BRIDGE</b><span>ENDLESS &middot; 9 WEAPONS</span>", 1),
     ("get s() { return { LV,",
-     "get s() { return { level: LI, name: L.name, weapon: wName, frenzyT, shieldT, od, odT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
+     "get s() { return { level: LI, flood: FI, fname: F && F.name, name: L.name, weapon: wName, frenzyT, shieldT, od, odT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
     (".map(g => ({ d: g.d, val: g.val }))", ".map(g => ({ d: g.d, val: g.val, kind: g.kind, label: g.label }))", 1),
     # ---- levels.js loads before the game
     ("<script>\n(function(){\n  var fill=", "<script src=\"levels.js\"></script>\n<script>\n(function(){\n  var fill=", 1),
 ]
+
+PATCHES += FLOOD_PATCHES
 
 for old, new, n in PATCHES:
     got = src.count(old)
