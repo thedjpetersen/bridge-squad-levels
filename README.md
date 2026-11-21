@@ -6,7 +6,7 @@
 
 This kit turns [Bridge Squad](https://noclipepe.pages.dev/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**, in both of its modes. It also adds **weapons**, **gate types** and **enemy types**.
 
-![Eight themes: dusk, day, sunset, neon, toxic, frost, desert, storm](docs/themes.png)
+![Ten worlds: dusk, day, sunset, neon, toxic, desert, storm, aurora, dawn and frost](docs/themes.png)
 
 This repo does **not** contain the game itself. `setup.sh` downloads the original from noclipepe's site and patches it on your machine.
 
@@ -22,10 +22,10 @@ python3 -m http.server 8731     # then open http://127.0.0.1:8731/?level=1
 | **Levels** | Seven hand-made stages in `levels.js`. Every level number after them is **generated** from a seed, so `?level=57` is the same level for everyone. A win leads to **NEXT STAGE**, with no end. |
 | **Level archetypes** | Generated levels draw from classic, SWARM (runners), SAWS (saw blades and a shield gate), ARSENAL (several weapon gates and frenzy), BOOM (barrels and bombers), SIEGE (brutes), BOSS RUSH (up to four mid-bosses) and FROST (freeze from the cage). |
 | **Weapons** | `rifle`, `laser` (the original ATK+150%), `rapid`, `spread`, `rocket` (splash damage), `rail` (pierces), `flame` (short range, burns through crowds), `shock` (Tesla: chains to 3 more enemies), `freeze` (slows enemies and bosses). The cage crate gives one, and weapon gates give others. |
-| **Gates** | `+N` (blue, or gold for 10+), `×N` (purple), `−N` and `÷N` traps (red; steer off the belt), weapon gates (green), **FRENZY** (double fire rate for a few seconds) and **SHIELD** (no melee, saw or mid-boss losses for a few seconds). |
-| **Enemies** | `grunt`, `brute` (big and tanky; survives several melee trades), `runner` (fast, aggros early), `bomber` (explodes when killed and takes extra soldiers with it in melee; chain reactions!). |
-| **Themes** | Ten original looks for sky, water, deck and lighting: dusk (stock), day, sunset, neon, toxic, frost, desert, storm, aurora and dawn. Each archetype has a default, and any level can set `theme:`. |
-| **Hazards** | **Saw blades** sweep across the belt or the deck at a fixed point. **Explosive barrels** sit in the horde: shoot one to blast everything around it. |
+| **Gates** | `+N` (blue, or gold for 10+), `×N` (purple), `−N` and `÷N` traps (red; steer off the belt), weapon gates (green), and teal buff gates: **FRENZY** (double fire rate for a few seconds), **SHIELD** (no melee, saw or mid-boss losses for a few seconds), fire rate and damage. Special gates carry a caption saying what they do. |
+| **Enemies** | `grunt` (red), `brute` (violet; big and tanky, survives several melee trades), `runner` (amber; fast, aggros early), `bomber` (green; explodes when killed and takes extra soldiers with it in melee; chain reactions!) and `splitter` (magenta). Each type has its own body colour, so you can read a horde at a glance. |
+| **Themes** | Ten original worlds: dusk (stock), day, sunset, neon, toxic, frost, desert, storm, aurora and dawn. Each world's look comes from its sky, fog and water; the deck and lights stay close to neutral, so every world still reads as the same bridge. Each archetype has a default, and any level can set `theme:`. |
+| **Hazards** | **Saw blades** (toothed, in a hazard-striped slot) sweep across the belt or the deck at a fixed point. **Explosive barrels** (red drums with warning badges) sit in the horde: shoot one to blast everything around it. |
 
 ## Tracking the original
 
@@ -92,6 +92,20 @@ Generated flood levels draw from LEAKY TANK, STAMPEDE (runners, faster march), S
 ```
 
 ![Flood Rescue: the menu, its level grid, and levels 2, 4, 6 and 7](docs/flood.png)
+
+## Art direction
+
+Everything the kit adds follows the original game's look, so it doesn't read as a mod:
+
+- **UI**: glossy blue gradients, white rims, a dark lip shadow and gold for "selected", the same as the original's buttons and stage cards.
+- **Gates** sort into colour families: blue, gold and purple add soldiers; reds cost soldiers; green arms the squad; teal gives a buff; silver hides a `?`.
+- **Hazards** reuse the bridge's own materials: yellow/black kerb stripes, red toy plastic, and glass like the gates and the tank.
+- **Enemy types** repaint only the body of the stock enemy, so horns, eyes and boots stay the same across the horde.
+- **Worlds** change sky, fog and water. The rim light is kept pale because, as a directional light, it lights the whole deck.
+
+![Before and after: enemy types, gates, saw, barrels and pod](docs/art-enemies.png)
+
+![Before and after: a neon bridge level and a Flood Rescue level](docs/art-worlds.png)
 
 ## How the original works
 

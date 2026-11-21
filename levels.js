@@ -177,7 +177,7 @@ window.FLOOD_LEVELS = [
   { name: 'FLOOD 1' },   // the original stage, exactly as shipped
   {
     name: 'FLOOD 2 · LEAKY TANK', theme: 'storm', callout: 'LEAKY TANK!', leak: 0.012,
-    tip: 'The tank leaks.<br>Keep the pump going or the water drains away.',
+    tip: 'The tank leaks.<br>Keep pumping or it drains away.',
     gates: [
       { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -4 }, { t: 9.5, x: -3.4, val: -5 }, { t: 14, x: 1.2, val: -6, max: 4 },
       { t: 18.5, x: -2.0, val: -7 }, { t: 23, x: 2.8, val: -6, max: 4 }, { t: 27.5, x: -3.6, val: -8 }, { t: 32, x: 0.6, val: -8, max: 4 },
@@ -186,7 +186,7 @@ window.FLOOD_LEVELS = [
   },
   {
     name: 'FLOOD 3 · STAMPEDE', theme: 'sunset', callout: 'STAMPEDE!', march: 1.15, mix: [['runner', 0.3]],
-    tip: 'Runners in the column.<br>Grow the squad fast.',
+    tip: 'Runners in the column.<br>Grow your squad fast.',
     gates: [
       { t: 0, x: -2.0, val: -3, d: 10.2, max: 4 }, { t: 4, x: 2.4, val: -4, max: 4 }, { t: 8.5, x: -3.0, val: -5, max: 4 }, { t: 13, x: 1.6, val: -5 },
       { t: 17.5, x: -1.6, val: -7, max: 4 }, { t: 22, x: 3.0, val: -6 }, { t: 26.5, x: -3.4, val: -8, max: 4 }, { t: 31, x: 0.8, val: -8 },
@@ -195,7 +195,7 @@ window.FLOOD_LEVELS = [
   },
   {
     name: 'FLOOD 4 · SLIDING GATES', theme: 'neon', callout: 'SLIDING GATES!',
-    tip: 'The gates slide side to side.<br>Chase them while you shoot.',
+    tip: 'The gates slide side to side.<br>Chase them as you shoot.',
     gates: [
       { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -4, vx: -1.0 }, { t: 9.5, x: -3.0, val: -6, vx: 1.2 }, { t: 14, x: 1.0, val: -5, max: 4, vx: -1.4 },
       { t: 18.5, x: -2.0, val: -8, max: 4, vx: 1.3 }, { t: 23, x: 2.8, val: -6, vx: -1.6 }, { t: 27.5, x: -3.8, val: -9, max: 4, vx: 1.5 }, { t: 32, x: 0.6, val: -8, vx: -1.8 },
@@ -204,7 +204,7 @@ window.FLOOD_LEVELS = [
   },
   {
     name: 'FLOOD 5 · BRUTE SQUAD', theme: 'desert', callout: 'BRUTES!', mix: [['brute', 0.1]],
-    tip: 'Two brutes and a tougher column.<br>Free a hero before the second one lands.',
+    tip: 'Two brutes this time.<br>Free a hero before the second.',
     minis: [{ t: 13, hp: 130, cap: 4 }, { t: 25, kind: 1, hp: 220, cap: 5 }],
     gates: [
       { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 4.5, x: 2.6, val: -4, max: 4 }, { t: 9, x: -3.4, val: -6 }, { t: 13.5, x: 1.0, val: -5, max: 4 },
@@ -214,7 +214,7 @@ window.FLOOD_LEVELS = [
   },
   {
     name: 'FLOOD 6 · JACKPOT', theme: 'aurora', callout: 'JACKPOT GATE!', mix: [['bomber', 0.12]],
-    tip: 'One deep red gate is worth a fortune.<br>Pour everything into it.',
+    tip: 'One deep red gate pays big.<br>Pour your fire into it.',
     gates: [
       { t: 0, x: -2.4, val: -4, d: 10.2, max: 4 }, { t: 5, x: 2.6, val: -5 }, { t: 9.5, x: 0, val: -14, max: 14, d: 15 }, { t: 15, x: -3.0, val: -6, max: 4 },
       { t: 19.5, x: 2.0, val: -8 }, { t: 24, x: -2.6, val: -7, max: 4 }, { t: 28.5, x: 3.0, val: -9 }, { t: 33, x: -0.6, val: -8, max: 4 },

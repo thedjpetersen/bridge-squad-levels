@@ -55,53 +55,74 @@ function overdrive() {
 //      3 bomber (explodes when killed, hurting nearby enemies; takes extra soldiers with it in melee)
 const ETYPE = { grunt: 0, brute: 1, runner: 2, bomber: 3, splitter: 4 };   // 4: bursts into two grunts when killed
 const EHP = [1, 5, 1, 1, 3], ESPD = [1, 1, 1.75, 1.2, 0.9], EAGG = [0, 0, 3, 2, 0], ESCL = [1, 1.42, 0.86, 0.96, 1.2];
-const ECOL = [[1, 1, 1], [0.6, 0.48, 0.78], [1.4, 1.15, 0.45], [0.42, 1.45, 0.32], [0.95, 0.35, 1.5]], ICE = [0.45, 0.95, 2.4];
+const ECOL = [[1, 1, 1], [0.5, 0.16, 0.85], [1.15, 0.62, 0.06], [0.32, 1.0, 0.14], [1.1, 0.2, 0.75]], ICE = [0.5, 1.1, 1.9];   // grunt (stock red), brute violet, runner amber, bomber green, splitter magenta
+// a chromatic instance colour repaints the red body parts of an enemy (horns, eyes, boots and belts keep their colours);
+// a grey one multiplies as the original does, so plain grunts look exactly as shipped
+function paintable(mat) {
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.onBeforeCompile = (sh, rend) => {
+    if (prev) prev(sh, rend);
+    sh.vertexShader = sh.vertexShader.replace('#include <color_vertex>', `#include <color_vertex>
+#if defined( USE_INSTANCING_COLOR ) && defined( USE_COLOR )
+{ vec3 ic = instanceColor.xyz; float mx = max(ic.r, max(ic.g, ic.b)), mn = min(ic.r, min(ic.g, ic.b));
+  if (mx - mn > 0.3 * mx) { vec3 c = color.xyz; vColor.xyz = (c.r > c.g * 2.5 + 0.004 && c.r > c.b * 2.5 + 0.004) ? c.r * ic : c * mx; } }
+#endif`);
+  };
+  mat.customProgramCacheKey = () => 'paint|' + key; mat.needsUpdate = true; return mat;
+}
+paintable(matEnemyHi); paintable(matEnemy);
 
 // ---- gate styles
-const GATE_STYLE = {
+const GATE_STYLE = { // families: blue/gold/purple add soldiers, reds cost soldiers, green arms, teal buffs, silver hides
   add: { glass: [0.03, 0.2, 0.95], glow: [0.05, 0.3, 1.0], edge: '#0b41c4' },
-  big: { glass: [1.0, 0.5, 0.02],  glow: [1.0, 0.5, 0.04], edge: '#b05a00' },
-  x:   { glass: [0.55, 0.08, 0.95], glow: [0.6, 0.1, 1.0], edge: '#5a0ca8' },
-  '-': { glass: [0.95, 0.04, 0.05], glow: [1.0, 0.08, 0.05], edge: '#8a0010' },
-  '/': { glass: [0.45, 0.0, 0.12],  glow: [0.7, 0.0, 0.2],  edge: '#40001a' },
-  w:   { glass: [0.02, 0.8, 0.45],  glow: [0.05, 1.0, 0.5],  edge: '#04664a' },
-  f:   { glass: [1.0, 0.3, 0.0],    glow: [1.0, 0.35, 0.0],  edge: '#902800' },
-  s:   { glass: [0.1, 0.85, 1.0],   glow: [0.15, 0.9, 1.0],  edge: '#005c78' },
-  r:   { glass: [0.35, 0.95, 0.05], glow: [0.4, 1.0, 0.1],   edge: '#2a6a00' },
-  q:   { glass: [0.12, 0.1, 0.18],  glow: [1.0, 0.8, 0.15],  edge: '#5a4500' },
-  d:   { glass: [0.95, 0.15, 0.55], glow: [1.0, 0.2, 0.6],   edge: '#7a0040' },
+  big: { glass: [1.0, 0.55, 0.02], glow: [1.0, 0.55, 0.04], edge: '#a04e00' },
+  x:   { glass: [0.5, 0.08, 0.95], glow: [0.55, 0.12, 1.0], edge: '#4e0c9c' },
+  '-': { glass: [0.95, 0.03, 0.05], glow: [1.0, 0.1, 0.06], edge: '#8f0a14' },
+  '/': { glass: [0.5, 0.0, 0.1],    glow: [0.75, 0.02, 0.15], edge: '#4a0010' },
+  w:   { glass: [0.03, 0.75, 0.3],  glow: [0.06, 0.95, 0.4], edge: '#04603a' },
+  f:   { glass: [0.0, 0.62, 0.72],  glow: [0.05, 0.85, 0.9], edge: '#00505e', sub: 'DOUBLE FIRE' },
+  s:   { glass: [0.0, 0.62, 0.72],  glow: [0.05, 0.85, 0.9], edge: '#00505e', sub: 'NO LOSSES' },
+  r:   { glass: [0.0, 0.62, 0.72],  glow: [0.05, 0.85, 0.9], edge: '#00505e', sub: 'FIRE RATE' },
+  d:   { glass: [0.0, 0.62, 0.72],  glow: [0.05, 0.85, 0.9], edge: '#00505e', sub: 'DAMAGE' },
+  q:   { glass: [0.28, 0.3, 0.52],  glow: [1.0, 0.85, 0.3], edge: '#2a2f52', sub: 'SHOOT IT', fill: ['#fff6c0', '#ffc21a'] },
 };
 const gateMeshes = new Map();
-function gateTex(text, edge) {
+function gateTex(text, edge, sub, fill) { // the original's gate face (white frame, outlined number), plus an optional caption strip
   return ctex(512, 256, (x, w, h) => {
     x.clearRect(0, 0, w, h);
     x.lineWidth = 11; x.strokeStyle = 'rgba(255,255,255,0.95)'; rr(x, 12, 12, w - 24, h - 24, 44); x.stroke();
-    let px = 178; x.font = '900 ' + px + 'px ' + FONT;
-    const tw = x.measureText(text).width; if (tw > w - 80) { px = Math.floor(px * (w - 80) / tw); x.font = '900 ' + px + 'px ' + FONT; }
+    const cy = sub ? h / 2 - 22 : h / 2 + 12, room = w - 80;
+    let px = sub ? 120 : 178; x.font = '900 ' + px + 'px ' + FONT;
+    const tw = x.measureText(text).width; if (tw > room) { px = Math.floor(px * room / tw); x.font = '900 ' + px + 'px ' + FONT; }
     x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round';
-    x.lineWidth = Math.max(10, px * 0.16); x.strokeStyle = edge; x.strokeText(text, w / 2, h / 2 + 12);
-    const g = x.createLinearGradient(0, 40, 0, 220); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#d8ecff');
-    x.fillStyle = g; x.fillText(text, w / 2, h / 2 + 12);
+    x.lineWidth = Math.max(10, px * 0.16); x.strokeStyle = edge; x.strokeText(text, w / 2, cy);
+    const g = x.createLinearGradient(0, cy - px / 2, 0, cy + px / 2); g.addColorStop(0, fill ? fill[0] : '#ffffff'); g.addColorStop(1, fill ? fill[1] : '#d8ecff');
+    x.fillStyle = g; x.fillText(text, w / 2, cy);
+    if (sub) {
+      x.fillStyle = 'rgba(255,255,255,0.96)'; rr(x, 40, h - 96, w - 80, 66, 33); x.fill();
+      let sp = 50; x.font = '900 ' + sp + 'px ' + FONT; const sw = x.measureText(sub).width; if (sw > w - 120) { sp = Math.floor(sp * (w - 120) / sw); x.font = '900 ' + sp + 'px ' + FONT; }
+      x.fillStyle = edge; x.fillText(sub, w / 2, h - 61);
+    }
   });
 }
-function gateMeshFor(label, edge) {
-  const key = label + '|' + edge;
-  if (!gateMeshes.has(key)) gateMeshes.set(key, inst(gateNumGeo, new THREE.MeshBasicMaterial({ map: gateTex(label, edge), color: numBright, vertexColors: true, alphaTest: 0.5 }), 72, 0));
+function gateMeshFor(label, edge, sub, fill) {
+  const key = label + '|' + edge + '|' + (sub || '');
+  if (!gateMeshes.has(key)) gateMeshes.set(key, inst(gateNumGeo, new THREE.MeshBasicMaterial({ map: gateTex(label, edge, sub, fill), color: numBright, vertexColors: true, alphaTest: 0.5 }), 72, 0));
   return gateMeshes.get(key);
 }
 const MYSTERY = [{ op: 'x', val: 2 }, { op: 'x', val: 2 }, { val: 20 }, { val: 30 }, { op: '/', val: 2 }, { op: '-', val: 15 }, { buff: 'shield', secs: 5 }, { buff: 'frenzy', secs: 6 }, { weapon: 'rocket' }, { weapon: 'rail' }, { buff: 'dmg' }];
 function makeGate(spec, t) {
   if (spec.mystery) { // a ? gate: what is inside is rolled per run; shoot it enough to see it before you commit
     const style = GATE_STYLE.q, inside = spec.inside || MYSTERY[(Math.random() * MYSTERY.length) | 0];
-    return { x: LANE_X, d: REL * t, t, val: 1, kind: 'q', label: '?', glass: style.glass, glow: style.glow, mesh: gateMeshFor('?', style.edge), alive: true, shoot: true, sv: 0, cap: 1, step: spec.step || 20, charge: 0, inside };
+    return { x: LANE_X, d: REL * t, t, val: 1, kind: 'q', label: '?', glass: style.glass, glow: style.glow, mesh: gateMeshFor('?', style.edge, style.sub, style.fill), alive: true, shoot: true, sv: 0, cap: 1, step: spec.step || 20, charge: 0, inside };
   }
   const v = spec.val || 1, op = spec.op || '+';
   const kind = spec.weapon ? 'w' : spec.buff === 'frenzy' ? 'f' : spec.buff === 'shield' ? 's' : spec.buff === 'rate' ? 'r' : spec.buff === 'dmg' ? 'd' : op === 'x' ? 'x' : op === '-' ? '-' : op === '/' ? '/' : '';
   const style = GATE_STYLE[kind || (v < 10 ? 'add' : 'big')];
-  const label = kind === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : kind === 'f' ? 'FRENZY' : kind === 's' ? 'SHIELD' : kind === 'r' ? 'FIRE+25%' : kind === 'd' ? 'DMG+25%'
+  const label = kind === 'w' ? (WEAPONS[spec.weapon] || WEAPONS.laser).label.split(' ')[0] : kind === 'f' ? 'FRENZY' : kind === 's' ? 'SHIELD' : kind === 'r' ? '+25%' : kind === 'd' ? '+25%'
     : kind === 'x' ? '×' + v : kind === '-' ? '−' + v : kind === '/' ? '÷' + v : '+' + v;
   const shoot = !!spec.shoot && (kind === '' || kind === '-');   // shootable gates count up while you shoot them
-  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge), alive: true,
+  return { x: LANE_X, d: REL * t, t, val: v, kind, weapon: spec.weapon, secs: spec.secs || (kind === 's' ? 5 : 6), label: kind === 'r' ? 'FIRE+25%' : kind === 'd' ? 'DMG+25%' : label, glass: style.glass, glow: style.glow, mesh: gateMeshFor(label, style.edge, kind === 'w' ? 'WEAPON' : kind === 's' ? (spec.secs || 5) + ' SECONDS' : style.sub, style.fill), alive: true,
     shoot, sv: kind === '-' ? -v : v, step: spec.step || 6, cap: spec.cap != null ? spec.cap : (kind === '-' ? 3 : v + 5), charge: 0 };
 }
 function revealGate(g) { // turn a ? gate into whatever it was hiding, in place
@@ -177,38 +198,67 @@ function chain(j, dmg) { // tesla: the bolt jumps to up to 3 more enemies, weake
 
 // ---- hazards: saw blades sweep across the deck at a fixed d; barrels sit in the horde and blow up when shot
 const hazards = [];
-const sawGeo = cylG(0.9, 0.9, 0.12, 14).rotateX(Math.PI / 2), hubGeo = cylG(0.3, 0.3, 0.22, 12).rotateX(Math.PI / 2);
-const sawMat = std({ color: 0xd6dae4, roughness: 0.22, metalness: 0.95 }), hubMat = std({ color: 0xd0181f, roughness: 0.4, metalness: 0.4, emissive: 0x500000 });
-const barrelGeo = cylG(0.42, 0.42, 1.05, 16), bandGeo = cylG(0.44, 0.44, 0.16, 16);
-const barrelMat = std({ color: 0xd8261c, roughness: 0.4, metalness: 0.5 }), bandMat = std({ color: 0xffc400, roughness: 0.35, metalness: 0.6, emissive: 0x332200 });
-const podGeo = sphG(0.75, 20, 14), podMat = phys({ color: 0x7fc8ff, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.45, clearcoat: 1, envMapIntensity: 1.2 }), podCore = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.4, 3.0) });
+// art: hazards borrow the bridge's own vocabulary (yellow/black edge stripes, red/white toy plastic, glass like the gates and tank)
+const stripeTex = ctex(256, 64, (x, w, h) => {   // a slot in the deck with hazard-striped edges, like the bridge's kerbs
+  x.fillStyle = '#20242e'; x.fillRect(0, 0, w, h);
+  for (const y0 of [0, h - 14]) { x.fillStyle = '#ffc61a'; x.fillRect(0, y0, w, 14); x.fillStyle = '#1a1a1a'; for (let i = -1; i < 12; i++) { x.beginPath(); x.moveTo(i * 24, y0 + 14); x.lineTo(i * 24 + 12, y0 + 14); x.lineTo(i * 24 + 24, y0); x.lineTo(i * 24 + 12, y0); x.fill(); } }
+  x.fillStyle = '#3a404e'; x.fillRect(0, h / 2 - 3, w, 6);
+});
+stripeTex.wrapS = THREE.RepeatWrapping;
+const sawGeo = (() => { // a toothed blade
+  const sh = new THREE.Shape(), T = 18;
+  for (let i = 0; i <= T; i++) { const a0 = i / T * TAU, a1 = (i + 0.62) / T * TAU; if (i === 0) sh.moveTo(Math.cos(a0) * 0.74, Math.sin(a0) * 0.74); else sh.lineTo(Math.cos(a0) * 0.74, Math.sin(a0) * 0.74); if (i < T) sh.lineTo(Math.cos(a1) * 0.95, Math.sin(a1) * 0.95); }
+  const hole = new THREE.Path(); hole.absarc(0, 0, 0.2, 0, TAU, true); sh.holes.push(hole);
+  return new THREE.ExtrudeGeometry(sh, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1, curveSegments: 6 }).translate(0, 0, -0.035);
+})();
+const hubGeo = cylG(0.3, 0.3, 0.2, 16).rotateX(Math.PI / 2), discGeo = cylG(0.6, 0.6, 0.1, 28).rotateX(Math.PI / 2);
+const sawMat = std({ color: 0xe8ecf4, roughness: 0.18, metalness: 0.95, envMapIntensity: 1.2 }), discMat = std({ color: 0x9aa2b4, roughness: 0.35, metalness: 0.9 }), hubMat = std({ color: 0xe0222e, roughness: 0.32, metalness: 0.2, emissive: 0x3a0000 });
+const barrelTex = ctex(256, 128, (x, w, h) => { // red drum with two warning badges around it
+  x.fillStyle = '#d8261c'; x.fillRect(0, 0, w, h); x.fillStyle = 'rgba(255,255,255,0.14)'; x.fillRect(0, 0, w, h * 0.18);
+  for (const cx of [w * 0.25, w * 0.75]) {
+    x.beginPath(); x.moveTo(cx, 30); x.lineTo(cx + 34, 94); x.lineTo(cx - 34, 94); x.closePath(); x.fillStyle = '#ffc61a'; x.fill(); x.lineWidth = 6; x.lineJoin = 'round'; x.strokeStyle = '#1a1a1a'; x.stroke();
+    x.fillStyle = '#1a1a1a'; x.fillRect(cx - 4, 50, 8, 26); x.fillRect(cx - 4, 81, 8, 8);
+  }
+});
+const barrelGeo = cylG(0.42, 0.42, 1.05, 20), bandGeo = cylG(0.445, 0.445, 0.12, 20);
+const barrelMat = [std({ map: barrelTex, roughness: 0.38, metalness: 0.35 }), std({ color: 0x9a1810, roughness: 0.5, metalness: 0.5 }), std({ color: 0x9a1810 })], bandMat = std({ color: 0x2a2e38, roughness: 0.35, metalness: 0.8 });
+const podGeo = sphG(0.72, 24, 16), podMat = phys({ color: 0x9fd6ff, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.38, clearcoat: 1, envMapIntensity: 1.3 }), podCore = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.4, 3.0) });
+const podBaseGeo = cylG(0.66, 0.74, 0.26, 24), podRimGeo = cylG(0.7, 0.7, 0.07, 24), podBaseMat = std({ color: 0x3a4152, roughness: 0.4, metalness: 0.7 }), podRimMat = std({ color: 0xffc61a, roughness: 0.4, metalness: 0.3 });
 const podLabels = [];
-const trackMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.15, 0.1), transparent: true, opacity: 0.35, depthWrite: false });
 function buildHazards(list) {
   for (const h of hazards) { scene.remove(h.mesh); if (h.track) scene.remove(h.track); if (h.label) h.label.sp.visible = false; }
   hazards.length = 0;
   for (const s of list) {
     const g = new THREE.Group(); scene.add(g);
     if (s.type === 'saw') {
-      const blade = new THREE.Mesh(sawGeo, sawMat); blade.castShadow = true; g.add(blade); g.add(new THREE.Mesh(hubGeo, hubMat));
-      const track = new THREE.Mesh(flatQuad, trackMat); track.position.set((s.x0 + s.x1) / 2, 0.07, -s.d); track.scale.set(s.x1 - s.x0 + 1.8, 1, 0.5); scene.add(track);
+      const blade = new THREE.Group(), saw = new THREE.Mesh(sawGeo, sawMat); saw.castShadow = true; blade.add(saw, new THREE.Mesh(discGeo, discMat)); g.add(blade); g.add(new THREE.Mesh(hubGeo, hubMat));
+      const len = s.x1 - s.x0 + 1.8, tm = std({ map: stripeTex.clone(), roughness: 0.7, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -2 }); tm.map.needsUpdate = true; tm.map.repeat.set(Math.max(1, Math.round(len / 1.6)), 1);
+      const track = new THREE.Mesh(flatQuad, tm); track.position.set((s.x0 + s.x1) / 2, 0.072, -s.d); track.scale.set(len, 1, 0.62); track.receiveShadow = true; scene.add(track);
       hazards.push({ type: 'saw', d: s.d, x0: s.x0, x1: s.x1, speed: s.speed || 1.6, ph: s.phase || 0, x: s.x0, mesh: g, blade, track, cd: 0 });
     } else if (s.type === 'pod') { // prisoners: shoot the pod open and they run to join the squad
-      const shell = new THREE.Mesh(podGeo, podMat); shell.position.y = 0.85; g.add(shell);
-      const core = new THREE.Mesh(sphG(0.32, 12, 8), podCore); core.position.y = 0.85; g.add(core);
-      for (let k = 0; k < 3; k++) { const m = new THREE.Mesh(sphG(0.17, 10, 8), std({ color: 0x2f7bff, roughness: 0.35 })); m.position.set(Math.cos(k * 2.1) * 0.32, 0.6, Math.sin(k * 2.1) * 0.32); g.add(m); }
+      const base = new THREE.Mesh(podBaseGeo, podBaseMat); base.position.y = 0.13; base.castShadow = true; g.add(base);
+      const rim = new THREE.Mesh(podRimGeo, podRimMat); rim.position.y = 0.27; g.add(rim);
+      const shell = new THREE.Mesh(podGeo, podMat); shell.position.y = 0.95; shell.renderOrder = 3; g.add(shell);
+      const core = new THREE.Mesh(sphG(0.16, 12, 8), podCore); core.position.y = 1.55; g.add(core);   // beacon on top
+      for (let k = 0; k < 4; k++) { const m = new THREE.Mesh(sphG(0.17, 12, 8), std({ color: 0x2f7bff, roughness: 0.3 })); m.position.set(Math.cos(k * 1.57 + 0.4) * 0.3, 0.55, Math.sin(k * 1.57 + 0.4) * 0.3); g.add(m); const hd = new THREE.Mesh(sphG(0.11, 10, 8), std({ color: 0x6fb0ff, roughness: 0.3 })); hd.position.set(m.position.x, 0.78, m.position.z); g.add(hd); }
       g.position.set(s.x, 0, -s.d);
       const idx = hazards.filter(z => z.type === 'pod').length;
       if (!podLabels[idx]) podLabels[idx] = mkLabel(256, 96, 1.9, 0.72, 11);
-      const lb = podLabels[idx]; lb.ctx.clearRect(0, 0, 256, 96); fancyText(lb.ctx, '+' + (s.n || 8), 128, 52, 64, '#bfe6ff', '#06306e', 12); lb.tex.needsUpdate = true; lb.sp.visible = true; lb.sp.position.set(s.x, 2.4, -s.d);
+      const lb = podLabels[idx]; lb.ctx.clearRect(0, 0, 256, 96); podPill(lb.ctx, '+' + (s.n || 8)); lb.tex.needsUpdate = true; lb.sp.visible = true; lb.sp.position.set(s.x, 2.55, -s.d);
       hazards.push({ type: 'pod', x: s.x, d: s.d, hp: s.hp || 10, n: s.n || 8, mesh: g, core, label: lb });
     } else if (s.type === 'barrel') {
-      const b = new THREE.Mesh(barrelGeo, barrelMat); b.position.y = 0.53; b.castShadow = true; g.add(b);
-      for (const y of [0.25, 0.8]) { const r = new THREE.Mesh(bandGeo, bandMat); r.position.y = y; g.add(r); }
+      const b = new THREE.Mesh(barrelGeo, barrelMat); b.position.y = 0.53; b.castShadow = true; b.rotation.y = s.d * 1.7; g.add(b);
+      for (const y of [0.08, 0.98]) { const r = new THREE.Mesh(bandGeo, bandMat); r.position.y = y; g.add(r); }
       g.position.set(s.x, 0, -s.d);
       hazards.push({ type: 'barrel', x: s.x, d: s.d, hp: s.hp || 4, r: s.radius || 3.2, mesh: g });
     }
   }
+}
+function podPill(x, text) { // the same pill as the squad counter, so freed soldiers read as yours
+  x.clearRect(0, 0, 256, 96);
+  x.save(); x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 5; const g = x.createLinearGradient(0, 10, 0, 86); g.addColorStop(0, '#7fd4ff'); g.addColorStop(0.5, '#2b8cff'); g.addColorStop(1, '#155be8'); x.fillStyle = g; rr(x, 24, 12, 208, 70, 35); x.fill(); x.restore();
+  x.lineWidth = 7; x.strokeStyle = '#ffffff'; rr(x, 24, 12, 208, 70, 35); x.stroke();
+  x.font = '900 52px ' + FONT; x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round'; x.lineWidth = 10; x.strokeStyle = '#0b3ea8'; x.strokeText(text, 128, 50); x.fillStyle = '#fff'; x.fillText(text, 128, 50);
 }
 function blowBarrel(h) {
   h.hp = 0; h.mesh.visible = false;
@@ -247,17 +297,18 @@ function updateHazards(dt) {
 
 
 // ---- themes: original palettes for sky, fog, water, deck, barriers and lights (the stock look is 'dusk')
-const THEMES = {
+const THEMES = { // art direction: the deck and key light stay close to neutral so every world reads as the same bridge;
+                 // each world's identity lives in its sky, fog and water. (The rim light is directional, so it lights the whole deck: keep it pale.)
   dusk:   { bg: [0.012, 0.04, 0.12], fog: [0.03, 0.075, 0.19], deep: [0.004, 0.022, 0.08], shal: [0.012, 0.08, 0.22], glint: [0.22, 0.42, 0.72], deck: 0xffffff, conc: 0xa3a8b6, pier: 0x5c6276, sun: [0xfff0da, 0.82], hemi: [0xdbeaff, 0x56607c, 0.27], rim: [0xcfe0ff, 0.34], css: '#0a1838' },
-  day:    { bg: [0.22, 0.5, 0.92], fog: [0.42, 0.64, 0.94], deep: [0.01, 0.08, 0.30], shal: [0.04, 0.26, 0.62], glint: [0.7, 0.9, 1.0], deck: 0xffffff, conc: 0xb8bfcc, pier: 0x6a7286, sun: [0xffffff, 0.95], hemi: [0xe8f4ff, 0x7a8aa0, 0.42], rim: [0xffffff, 0.3], css: '#4a8ef0' },
-  sunset: { bg: [0.50, 0.14, 0.22], fog: [0.80, 0.36, 0.30], deep: [0.08, 0.02, 0.10], shal: [0.40, 0.11, 0.22], glint: [1.0, 0.62, 0.35], deck: 0xffe2cc, conc: 0xc8a29a, pier: 0x6e4a58, sun: [0xffb070, 0.95], hemi: [0xffd2b0, 0x5a3044, 0.34], rim: [0xff9a7a, 0.42], css: '#8a2a3a' },
-  neon:   { bg: [0.03, 0.0, 0.08], fog: [0.12, 0.02, 0.22], deep: [0.02, 0.0, 0.06], shal: [0.10, 0.0, 0.28], glint: [0.2, 1.0, 1.0], deck: 0xc4c0e0, conc: 0x8a80b0, pier: 0x3a2c5a, sun: [0xd8b8ff, 0.72], hemi: [0xb0a0ff, 0x30204a, 0.3], rim: [0x40f0ff, 0.6], css: '#12042a' },
-  toxic:  { bg: [0.03, 0.08, 0.02], fog: [0.12, 0.22, 0.06], deep: [0.02, 0.05, 0.01], shal: [0.12, 0.28, 0.04], glint: [0.6, 1.0, 0.2], deck: 0xdde6cc, conc: 0x9aa884, pier: 0x4a5636, sun: [0xeaffb0, 0.8], hemi: [0xe0ffc0, 0x3a4a22, 0.3], rim: [0xb0ff60, 0.42], css: '#16260a' },
-  desert: { bg: [0.70, 0.50, 0.28], fog: [0.88, 0.70, 0.44], deep: [0.0, 0.20, 0.26], shal: [0.05, 0.50, 0.52], glint: [0.8, 1.0, 0.95], deck: 0xfff0d0, conc: 0xd8c09a, pier: 0x8a7254, sun: [0xffe8b8, 1.0], hemi: [0xfff0d0, 0x8a6a44, 0.42], rim: [0xffe0a0, 0.35], css: '#c09050' },
-  storm:  { bg: [0.10, 0.04, 0.05], fog: [0.22, 0.08, 0.08], deep: [0.04, 0.02, 0.03], shal: [0.20, 0.06, 0.07], glint: [1.0, 0.35, 0.25], deck: 0xdcd0d0, conc: 0x9a8a8e, pier: 0x4a3438, sun: [0xffd0c0, 0.75], hemi: [0xffc8c8, 0x402028, 0.3], rim: [0xff6a5a, 0.5], css: '#2a0c10' },
-  aurora: { bg: [0.01, 0.06, 0.07], fog: [0.04, 0.20, 0.18], deep: [0.0, 0.04, 0.05], shal: [0.02, 0.22, 0.20], glint: [0.3, 1.0, 0.7], deck: 0xc8e8e0, conc: 0x7a9a96, pier: 0x2c4a48, sun: [0xc0fff0, 0.75], hemi: [0xb0ffe8, 0x1c3a38, 0.32], rim: [0x60ffc0, 0.55], css: '#062424' },
-  dawn:   { bg: [0.86, 0.56, 0.62], fog: [0.96, 0.76, 0.70], deep: [0.10, 0.12, 0.30], shal: [0.45, 0.42, 0.62], glint: [1.0, 0.85, 0.7], deck: 0xfff0ec, conc: 0xe0c4c8, pier: 0x8a6a7a, sun: [0xffe0c0, 1.0], hemi: [0xfff0f0, 0x8a6a7a, 0.45], rim: [0xffc0a0, 0.35], css: '#d8909c' },
-  frost:  { bg: [0.72, 0.82, 0.92], fog: [0.86, 0.92, 0.98], deep: [0.12, 0.30, 0.38], shal: [0.62, 0.84, 0.90], glint: [1.0, 1.0, 1.0], deck: 0xeaf6ff, conc: 0xd8e6f2, pier: 0x8aa0b8, sun: [0xf0f8ff, 0.92], hemi: [0xffffff, 0x8fa8c0, 0.48], rim: [0xd0f0ff, 0.4], css: '#8cb6dc' },
+  day:    { bg: [0.30, 0.56, 0.90], fog: [0.55, 0.72, 0.92], deep: [0.01, 0.07, 0.24], shal: [0.03, 0.22, 0.50], glint: [0.70, 0.90, 1.0], deck: 0xffffff, conc: 0xb4bac6, pier: 0x667086, sun: [0xfffaf0, 0.92], hemi: [0xeaf2ff, 0x7a8496, 0.38], rim: [0xffffff, 0.28], css: '#4c8ee8' },
+  sunset: { bg: [0.42, 0.13, 0.20], fog: [0.70, 0.34, 0.30], deep: [0.05, 0.03, 0.10], shal: [0.22, 0.10, 0.24], glint: [1.0, 0.62, 0.40], deck: 0xfff4ec, conc: 0xb8a4a4, pier: 0x5e4a58, sun: [0xffdcc0, 0.88], hemi: [0xffe6d8, 0x4e3a48, 0.3], rim: [0xffe2d6, 0.34], css: '#6a2034' },
+  neon:   { bg: [0.03, 0.01, 0.09], fog: [0.09, 0.03, 0.18], deep: [0.0, 0.02, 0.06], shal: [0.02, 0.06, 0.18], glint: [0.25, 0.90, 1.0], deck: 0xf2f2fa, conc: 0x8e8aa6, pier: 0x3a3452, sun: [0xece6ff, 0.8], hemi: [0xdcd8ff, 0x2e2a44, 0.27], rim: [0xf0e4ff, 0.34], css: '#0e0624' },
+  toxic:  { bg: [0.04, 0.09, 0.05], fog: [0.08, 0.16, 0.11], deep: [0.01, 0.04, 0.04], shal: [0.03, 0.13, 0.11], glint: [0.60, 1.0, 0.35], deck: 0xf6f8f0, conc: 0x9aa290, pier: 0x485240, sun: [0xf6ffe6, 0.82], hemi: [0xeef8e4, 0x3a4434, 0.28], rim: [0xeef8e0, 0.32], css: '#10200e' },
+  desert: { bg: [0.72, 0.54, 0.34], fog: [0.86, 0.70, 0.48], deep: [0.0, 0.16, 0.24], shal: [0.04, 0.40, 0.46], glint: [0.85, 1.0, 0.95], deck: 0xfff8ee, conc: 0xd0bc9c, pier: 0x86705a, sun: [0xfff2dc, 0.95], hemi: [0xfff6e6, 0x7a6650, 0.38], rim: [0xfff0d8, 0.3], css: '#b88c5a' },
+  storm:  { bg: [0.08, 0.05, 0.07], fog: [0.18, 0.10, 0.11], deep: [0.02, 0.02, 0.04], shal: [0.10, 0.06, 0.10], glint: [1.0, 0.45, 0.35], deck: 0xf4f0f0, conc: 0x948a8e, pier: 0x463a40, sun: [0xffe8e0, 0.8], hemi: [0xf4e4e6, 0x3a2a30, 0.28], rim: [0xffe6e2, 0.32], css: '#200c12' },
+  aurora: { bg: [0.01, 0.05, 0.08], fog: [0.03, 0.15, 0.16], deep: [0.0, 0.03, 0.06], shal: [0.01, 0.12, 0.16], glint: [0.35, 1.0, 0.75], deck: 0xf2faf8, conc: 0x82989a, pier: 0x2e4446, sun: [0xeafff8, 0.8], hemi: [0xe4f8f4, 0x203436, 0.28], rim: [0xe0fff4, 0.34], css: '#06222a' },
+  dawn:   { bg: [0.80, 0.56, 0.62], fog: [0.92, 0.74, 0.70], deep: [0.08, 0.10, 0.26], shal: [0.32, 0.34, 0.56], glint: [1.0, 0.86, 0.72], deck: 0xfffaf8, conc: 0xd4c2c6, pier: 0x806a76, sun: [0xfff2e6, 0.95], hemi: [0xfff6f4, 0x7e6a76, 0.4], rim: [0xffece0, 0.3], css: '#c88a98' },
+  frost:  { bg: [0.66, 0.78, 0.90], fog: [0.80, 0.88, 0.96], deep: [0.08, 0.22, 0.32], shal: [0.38, 0.62, 0.74], glint: [1.0, 1.0, 1.0], deck: 0xf6fbff, conc: 0xcad8e6, pier: 0x8496ac, sun: [0xf8fcff, 0.82], hemi: [0xf8fcff, 0x8ea2b6, 0.36], rim: [0xeef8ff, 0.3], css: '#86acd2' },
 };
 const ARCH_THEME = { classic: 'dusk', swarm: 'sunset', saws: 'neon', arsenal: 'day', boom: 'toxic', siege: 'desert', bossrush: 'storm', frost: 'frost', gamble: 'aurora', rescue: 'dawn' };
 function applyTheme(name) {
@@ -565,13 +616,13 @@ function normFlood(v, i) {
   return o;
 }
 const FLOOD_ARCH = [ // [id, HUD name, first level, theme, callout, menu tip]
-  ['flood', '', 1, 'dusk', '', 'Shoot red gates blue, then walk through them.<br>Pump the tank full to free the heroes.'],
-  ['leaky', 'LEAKY TANK', 2, 'storm', 'LEAKY TANK!', 'The tank leaks.<br>Keep the pump going or the water drains away.'],
-  ['stampede', 'STAMPEDE', 3, 'sunset', 'STAMPEDE!', 'Runners in the column.<br>Grow the squad fast.'],
-  ['sliders', 'SLIDING GATES', 4, 'neon', 'SLIDING GATES!', 'The gates slide side to side.<br>Chase them while you shoot.'],
-  ['brutes', 'BRUTE SQUAD', 5, 'desert', 'BRUTES!', 'Two brutes and a tougher column.<br>Free a hero before the second one lands.'],
-  ['jackpot', 'JACKPOT', 6, 'aurora', 'JACKPOT GATE!', 'One deep red gate is worth a fortune.<br>Pour everything into it.'],
-  ['bombers', 'BOMBERS', 7, 'toxic', 'BOMBERS!', 'Green bombers blow up when they die.<br>Use them to clear the column.'],
+  ['flood', '', 1, 'dusk', '', 'Shoot red gates blue, then take them.<br>Pump the tank to free the heroes.'],
+  ['leaky', 'LEAKY TANK', 2, 'storm', 'LEAKY TANK!', 'The tank leaks.<br>Keep pumping or it drains away.'],
+  ['stampede', 'STAMPEDE', 3, 'sunset', 'STAMPEDE!', 'Runners in the column.<br>Grow your squad fast.'],
+  ['sliders', 'SLIDING GATES', 4, 'neon', 'SLIDING GATES!', 'The gates slide side to side.<br>Chase them as you shoot.'],
+  ['brutes', 'BRUTE SQUAD', 5, 'desert', 'BRUTES!', 'Two brutes this time.<br>Free a hero before the second.'],
+  ['jackpot', 'JACKPOT', 6, 'aurora', 'JACKPOT GATE!', 'One deep red gate pays big.<br>Pour your fire into it.'],
+  ['bombers', 'BOMBERS', 7, 'toxic', 'BOMBERS!', 'Green bombers blow up.<br>Use them to clear the column.'],
   ['titan', 'THE TITAN', 8, 'frost', 'THE TITAN!', 'A huge tank and a huge boss.<br>Free both heroes.'],
 ];
 function generateFlood(n, seed) {
@@ -614,7 +665,7 @@ function applyFlood() {
 }
 function floodStart() { const u = SAVE.up, n = F.start - 1 + u.squad * 2; if (n > 0) addSoldiers(n, X, -0.5, 0.7); heroMul *= 1 + u.hero * 0.2; rateMul = 1 / (1 + u.rate * 0.05); }
 function floodType() { let r = Math.random(); for (const m of F.mix) { if (r < m[1]) return m[0]; r -= m[1]; } return 0; }
-function floodSub() { return '<b>' + F.name + '</b><br>' + (F.tip || 'Shoot red gates until they turn blue.<br>Shoot the pump to flood the tank and free the heroes.'); }
+function floodSub() { return '<b>' + F.name + '</b><br>' + (F.tip || 'Shoot red gates until they turn blue.<br>Pump the tank to free the heroes.'); }
 function floodLevels() {
   const n = Math.max(SAVE.fmax + 1, 12), cells = [];
   for (let i = 0; i < n; i++) {
@@ -655,33 +706,42 @@ FLOOD_PATCHES = [
 ]
 
 KIT_CSS = r'''
-  #kit{display:none;gap:.4em;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:.9em;max-width:94%}
+  /* kit UI in the original's language: blue glossy gradients, white rims, a dark lip shadow, gold for "selected" */
+  #kit{display:none;gap:.42em;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:.95em;max-width:94%}
   #ov.menu #kit,#ov.end #kit{display:flex}
   #kShare{display:none}#ov.end #kShare{display:inline-block}
-  .kb{font:inherit;font-size:.9em;color:#fff;cursor:pointer;border:.13em solid rgba(255,255,255,.9);border-radius:.7em;padding:.38em .75em;background:linear-gradient(180deg,rgba(255,178,40,.96),rgba(214,96,0,.96));box-shadow:0 .18em 0 rgba(90,30,0,.9);letter-spacing:.04em;text-shadow:0 .06em 0 rgba(90,30,0,.8)}
-  .kb:disabled{opacity:.45;cursor:default}.kb u{text-decoration:none;color:#fff3a0}
-  #kitc{display:flex;align-items:center;padding:.3em .7em;border-radius:.9em;background:rgba(0,0,0,.35);border:.12em solid rgba(255,255,255,.6);font-size:.95em;color:#ffe14a}
-  .kcoin{display:inline-block;width:.9em;height:.9em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6b0,#ffc21a 55%,#b86a00);box-shadow:0 0 0 .08em #7a4400;vertical-align:-.1em;margin-right:.3em}
-  #kitp{position:absolute;inset:0;z-index:8;display:none;align-items:center;justify-content:center;background:rgba(4,10,30,.8);cursor:default}
+  .kb{font:inherit;font-size:.86em;color:#fff;cursor:pointer;border:.14em solid rgba(255,255,255,.92);border-radius:.75em;padding:.42em .8em;background:linear-gradient(180deg,rgba(96,170,255,.9),rgba(24,66,180,.94));box-shadow:0 .2em 0 rgba(8,30,100,.95),0 .45em .7em rgba(0,0,0,.3),inset 0 .14em 0 rgba(255,255,255,.5);letter-spacing:.05em;text-shadow:0 .08em 0 rgba(0,20,80,.75);transition:transform .08s}
+  .kb:active{transform:translateY(.12em)}
+  .kb:disabled{opacity:.45;cursor:default}.kb u{text-decoration:none;color:#ffe14a}
+  #kitc{display:flex;align-items:center;padding:.34em .8em;border-radius:.8em;background:linear-gradient(180deg,rgba(4,12,40,.88),rgba(14,30,80,.85));border:.14em solid #fff;box-shadow:0 .2em 0 rgba(8,30,100,.9);font-size:.9em;color:#ffe14a;text-shadow:0 .08em 0 rgba(90,40,0,.8)}
+  .kcoin{display:inline-block;width:.95em;height:.95em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff8c8,#ffd23a 50%,#d98a00);box-shadow:0 0 0 .09em #7a4400,inset 0 -.08em 0 rgba(120,60,0,.5);vertical-align:-.12em;margin-right:.35em}
+  #kitp{position:absolute;inset:0;z-index:8;display:none;align-items:center;justify-content:center;background:rgba(4,10,30,.78);backdrop-filter:blur(2px);cursor:default}
   #kitp.show{display:flex}
-  .kpi{width:88%;max-height:84%;overflow:auto;padding:1em;border-radius:1em;background:linear-gradient(180deg,#1d3a8a,#0d1d52);border:.14em solid #fff;box-shadow:0 .3em 0 rgba(0,0,0,.5);text-align:center;color:#fff}
-  .kpi h3{margin:.1em 0 .6em;font-size:1.6em;letter-spacing:.06em}
-  .kgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:.45em;margin-bottom:.8em}
-  .kl{font:inherit;color:#fff;cursor:pointer;border:.12em solid rgba(255,255,255,.8);border-radius:.7em;padding:.4em .2em;background:linear-gradient(180deg,#3d7bff,#1640b0)}
-  .kl.cur{border-color:#ffe14a;box-shadow:0 0 0 .1em #ffe14a}.kl.lock{opacity:.4;cursor:default;background:#2a3358}
-  .kl b{display:block;font-size:1.3em}.kl i{display:block;font-style:normal;font-size:.5em;letter-spacing:.04em;color:#cfe6ff;font-family:Arial,sans-serif;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .kl u{display:block;text-decoration:none;color:#ffd21f;font-size:.8em}.kl u s,.ku em s{text-decoration:none;color:rgba(255,255,255,.25)}
-  .ku{display:flex;align-items:center;gap:.6em;text-align:left;padding:.5em;margin-bottom:.45em;border-radius:.7em;background:rgba(0,0,0,.25)}
-  .ku>div{flex:1}.ku b{display:block;font-size:1em}.ku span{display:block;font:700 .62em Arial,sans-serif;color:#cfe6ff}.ku em{display:block;font-style:normal;color:#ffd21f;font-size:.7em;letter-spacing:.1em}
-  .kcoins{font:700 .8em Arial,sans-serif;margin:-.2em 0 .8em}
-  #kitt{position:absolute;left:50%;bottom:10%;transform:translateX(-50%);z-index:9;padding:.4em .9em;border-radius:.8em;background:rgba(0,0,0,.8);color:#fff;font-size:.9em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+  .kpi{width:88%;max-width:26em;max-height:84%;overflow:auto;padding:1em 1em .9em;border-radius:1.1em;background:linear-gradient(180deg,rgba(52,96,200,.97),rgba(14,34,104,.98));border:.16em solid rgba(255,255,255,.95);box-shadow:0 .3em 0 rgba(6,22,80,.95),0 1em 2em rgba(0,0,0,.5),inset 0 .14em 0 rgba(255,255,255,.35);text-align:center;color:#fff}
+  .kpi h3{margin:.1em 0 .65em;font-size:1.5em;letter-spacing:.08em;text-shadow:0 .1em 0 rgba(0,20,80,.8)}
+  .kgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5em;margin-bottom:.9em}
+  .kl{font:inherit;color:#fff;cursor:pointer;border:.14em solid rgba(255,255,255,.88);border-radius:.8em;padding:.42em .2em .36em;background:linear-gradient(180deg,rgba(96,170,255,.92),rgba(24,66,180,.95));box-shadow:0 .18em 0 rgba(6,22,80,.95),inset 0 .12em 0 rgba(255,255,255,.45);text-shadow:0 .08em 0 rgba(0,20,80,.8)}
+  .kl.cur{border-color:#ffe14a;background:linear-gradient(180deg,rgba(130,196,255,.96),rgba(30,84,206,.96));box-shadow:0 0 0 .12em #ffe14a,0 .18em 0 rgba(6,22,80,.95)}
+  .kl.lock{cursor:default;background:linear-gradient(180deg,rgba(40,56,110,.85),rgba(20,30,70,.9));border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.45);text-shadow:none}
+  .kl b{display:block;font-size:1.3em;line-height:1.1}.kl i{display:block;font-style:normal;font-size:.48em;letter-spacing:.05em;color:#cfe6ff;font-family:Arial,sans-serif;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:.1em 0 .15em}
+  .kl.lock i{color:rgba(255,255,255,.4)}
+  .kl u{display:block;text-decoration:none;color:#ffd21f;font-size:.8em;letter-spacing:.06em;text-shadow:0 .06em 0 #8a3d00}.kl u s,.ku em s{text-decoration:none;color:rgba(10,20,60,.55);text-shadow:none}
+  .ku{display:flex;align-items:center;gap:.7em;text-align:left;padding:.55em .6em;margin-bottom:.5em;border-radius:.8em;background:rgba(4,12,40,.45);border:.1em solid rgba(255,255,255,.18)}
+  .ku>div{flex:1}.ku b{display:block;font-size:.98em;letter-spacing:.04em}.ku span{display:block;font:700 .66em/1.35 Arial,sans-serif;color:#d8e8ff;margin:.15em 0 .2em}
+  .ku em{display:block;font-style:normal;color:#ffd21f;font-size:.72em;letter-spacing:.14em}
+  .kbuy{min-width:4.6em;background:linear-gradient(180deg,#7fd4ff,#2b8cff 48%,#155be8)}
+  .kcoins{font:700 .8em Arial,sans-serif;margin:-.25em 0 .85em;color:#d8e8ff}.kcoins b{color:#ffe14a}
+  .kclose{margin-top:.2em;background:linear-gradient(180deg,rgba(60,90,170,.95),rgba(20,36,96,.96))}
+  #kitt{position:absolute;left:50%;bottom:10%;transform:translateX(-50%);z-index:9;padding:.45em 1em;border-radius:.8em;background:linear-gradient(180deg,rgba(4,12,40,.92),rgba(14,30,80,.9));border:.14em solid #fff;color:#fff;font-size:.9em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
   #kitt.show{opacity:1}
   body.clean #kit{display:none!important}
-  #bOD{position:absolute;left:2%;top:6.6%;z-index:5;display:none;width:9.5em;height:1.9em;padding:0;overflow:hidden;border-radius:.7em;font-size:.9em;justify-content:center;align-items:center;background:linear-gradient(180deg,rgba(20,30,70,.9),rgba(8,14,40,.92))}
-  #bOD #odF{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(180deg,#ffe680,#ff9a00);transition:width .15s}
-  #bOD b{position:relative;font-size:.8em;letter-spacing:.06em;text-shadow:0 .08em 0 rgba(0,0,0,.6)}
-  #bOD.ready{animation:pulse .7s infinite;box-shadow:0 0 1em #ffc020,0 .2em 0 rgba(8,30,100,.95)}
-  #bOD.on #odF{background:linear-gradient(180deg,#fff6b0,#ffd000)}
+  #hudL{overflow:hidden;text-overflow:ellipsis;max-width:62%;flex:none}#hudL.k2{font-size:.74em}#hudL.k3{font-size:.64em}
+  #bar{min-width:3.2em}
+  #bOD{position:absolute;left:2%;top:6.4%;z-index:5;display:none;width:9.6em;height:1.75em;padding:0;overflow:hidden;border-radius:.6em;font-size:.86em;justify-content:center;align-items:center;background:linear-gradient(180deg,rgba(4,12,40,.88),rgba(14,30,80,.85));border:.14em solid #fff;box-shadow:0 .18em 0 rgba(8,30,100,.9),0 .4em .6em rgba(0,0,0,.3)}
+  #bOD #odF{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:.45em;background:linear-gradient(180deg,#fff1a8,#ffc21a 55%,#e08a00);box-shadow:inset 0 .14em 0 rgba(255,255,255,.65);transition:width .15s}
+  #bOD b{position:relative;font-size:.78em;letter-spacing:.08em;text-shadow:0 .08em 0 rgba(0,20,80,.85),0 0 .3em rgba(0,20,80,.6)}
+  #bOD.ready{animation:pulse .7s infinite;box-shadow:0 0 .9em #ffc020,0 .18em 0 rgba(8,30,100,.95)}
+  #bOD.on #odF{background:linear-gradient(180deg,#fffbe0,#ffe14a)}
   body.clean #bOD{display:none!important}
 '''
 
@@ -716,7 +776,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "    for (const q of bossQ) if (!q.done && D >= q.at) { q.done = true; spawnBoss(q.kind, clamp(X + q.dx, -4, 1.5), D + q.ahead, true, q); }\n", 1),
     ("if (!b.active) { if (LV === 1 ? D >= 29 : gt >= T_BOSS)", "if (!b.active) { if (LV === 1 ? D >= L.final.wakeAt : gt >= T_BOSS)", 1),
     ("clamp(LV === 1 ? D / 29 : gt / T_BOSS, 0, 1)", "clamp(LV === 1 ? D / L.final.wakeAt : gt / T_BOSS, 0, 1)", 1),
-    ("$('hudL').textContent = 'STAGE ' + LV;", "$('hudL').textContent = LV === 1 ? L.name : F.name;", 1),
+    ("$('hudL').textContent = 'STAGE ' + LV;", "{ const nm = LV === 1 ? L.name : F.name, h = $('hudL'); h.textContent = nm.split(' · ')[0]; h.className = h.textContent.length > 11 ? 'k2' : ''; }", 1),
     ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt);", 1),
     # ---- gates: any label, colour per kind, special effects
     ("c = g.val === 1 ? GLASS_B : GLASS_Y, gc = g.val === 1 ? GLOW_B : GLOW_Y", "c = g.glass, gc = g.glow", 1),
