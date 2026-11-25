@@ -21,7 +21,7 @@ python3 -m http.server 8731     # then open http://127.0.0.1:8731/?level=1
 |---|---|
 | **Levels** | Seven hand-made stages in `levels.js`. Every level number after them is **generated** from a seed, so `?level=57` is the same level for everyone. A win leads to **NEXT STAGE**, with no end. |
 | **Level archetypes** | Generated levels draw from classic, SWARM (runners), SAWS (saw blades and a shield gate), ARSENAL (several weapon gates and frenzy), BOOM (barrels and bombers), SIEGE (brutes), BOSS RUSH (up to four mid-bosses) and FROST (freeze from the cage). |
-| **Weapons** | `rifle`, `laser` (the original ATK+150%), `rapid`, `spread`, `rocket` (splash damage), `rail` (pierces), `flame` (short range, burns through crowds), `shock` (Tesla: chains to 3 more enemies), `freeze` (slows enemies and bosses). The cage crate gives one, and weapon gates give others. |
+| **Weapons** | `rifle`, `laser` (the original ATK+150%), `rapid`, `spread`, `rocket` (splash damage), `rail` (pierces), `flame` (short range, burns through crowds), `shock` (Tesla: chains to 3 more enemies), `freeze` (slows enemies and bosses). The cage crate gives one, and weapon gates give others. A gate for the gun you hold levels it up (see Run mechanics). |
 | **Gates** | `+N` (blue, or gold for 10+), `×N` (purple), `−N` and `÷N` traps (red; steer off the belt), weapon gates (green), and teal buff gates: **FRENZY** (double fire rate for a few seconds), **SHIELD** (no melee, saw or mid-boss losses for a few seconds), fire rate and damage. Special gates carry a caption saying what they do. |
 | **Enemies** | `grunt` (red), `brute` (violet; big and tanky, survives several melee trades), `runner` (amber; fast, aggros early), `bomber` (green; explodes when killed and takes extra soldiers with it in melee; chain reactions!) and `splitter` (magenta). Each type has its own body colour, so you can read a horde at a glance. |
 | **Themes** | Ten original worlds: dusk (stock), day, sunset, neon, toxic, frost, desert, storm, aurora and dawn. Each world's look comes from its sky, fog and water; the deck and lights stay close to neutral, so every world still reads as the same bridge. Each archetype has a default, and any level can set `theme:`. |
@@ -67,6 +67,18 @@ These go beyond the genre's staples:
 
 Generated levels add two archetypes for these. **GAMBLE** (from level 7, theme `aurora`) has 3–4 `?` gates. **RESCUE** (from level 6, theme `dawn`) has 4–6 pods. Single `?` gates, pods and splitters also turn up in other levels.
 
+### Run mechanics
+
+Three mechanics make a level more than a DPS check: a choice after each mid-boss, a reason to steer during the boss fights, and a reason to take the same gun twice.
+
+| Mechanic | How it works |
+|---|---|
+| **Perk draft** | When a mid-boss goes down, the game pauses on three cards. Tap one (or press 1, 2 or 3) to keep it for the rest of the level, up to three a level. Perks: CRITICAL HITS (+15% chance of triple damage), GIANT SLAYER (+35% boss damage), QUICK HANDS (+20% fire rate), FIELD MEDIC (a soldier every 2 s), REINFORCEMENTS (+12 now), IRON SKIN (1 in 3 hits miss), OVERCHARGE (overdrive charges twice as fast), CHAIN REACTION (some kills explode), GATE BOOST (+ gates give 1 more), QUICK FEET (smaller boulder circles). Picking one again stacks it. Flood Rescue drafts after each mini-boss, with GATE BREAKER (red gates count up twice as fast) in place of the bridge-only perks. Held perks show as chips under the overdrive meter. |
+| **Boss boulders** | On their way in, bosses lob boulders at the squad. A red circle marks each landing spot about a second ahead. Anything inside when it lands is crushed: up to a tenth of the squad (a seventh for the final boss), and the horde too. Steer out of the circle, or catch the horde under it. A shield blocks it. |
+| **Weapon levels** | A weapon gate for the gun you already hold says **LEVEL UP**. LV2 does +35% damage; LV3 does +70% and fires 15% faster. Generated levels from 5 on sometimes put a level-up gate for the cage's gun after the cage. |
+
+![Perk draft, a boulder's red circle over the squad, and a LEVEL UP weapon gate](docs/mechanics.png)
+
 
 ![Menu, level grid, upgrade shop and a trap being shot up](docs/ui.png)
 
@@ -111,7 +123,7 @@ Everything the kit adds follows the original game's look, so it doesn't read as 
 
 The game is one HTML page plus `three.min.js`. The game script is stored as text in `<script type="text/plain" id="main">` and runs once three.js has loaded. It uses no image or sound files: every mesh, texture and sound is generated in code.
 
-The original has two stages, each written directly into code: the bridge in `reset()` and `update()`, Flood Rescue in `reset2()` and `step2()`. `build.py` applies 84 exact-match patches to read the level from data and to add the new mechanics. If the original page changes and an anchor no longer matches, the build fails instead of producing a broken game.
+The original has two stages, each written directly into code: the bridge in `reset()` and `update()`, Flood Rescue in `reset2()` and `step2()`. `build.py` applies 91 exact-match patches to read the level from data and to add the new mechanics. If the original page changes and an anchor no longer matches, the build fails instead of producing a broken game.
 
 ## Level format (`levels.js`)
 

@@ -10,7 +10,8 @@ const BOT = () => new Promise(done => {
   let last = -1;
   const tick = () => {
     const s = G.s;
-    if (s.state !== "play") return done({ name: s.fname, result: s.state, t: +s.t.toFixed(1), N: s.N, kills: s.kills, tier: s.tier, log });
+    if (s.state !== "play") return done({ name: s.fname, perks: Object.entries(s.perk).filter(e => e[1]).map(e => e.join(':')).join(' '), result: s.state, t: +s.t.toFixed(1), N: s.N, kills: s.kills, tier: s.tier, log });
+    if (s.perkOpen) { window.dispatchEvent(new KeyboardEvent('keydown', { key: String(1 + ((Math.random() * 3) | 0)) })); requestAnimationFrame(tick); return; }   // pick a random perk
     let tx, why;
     const near = s.g2.filter(g => g.d < s.D + s.hd + 14);
     const pumpTime = s.tank.phase !== 3 && s.tank.phase !== 1 && s.t > 12 && s.N >= 8;

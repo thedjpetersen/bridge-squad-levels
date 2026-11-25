@@ -8,14 +8,15 @@ let pw; try { pw = require('playwright'); } catch { pw = require(execSync('npm r
 const base = process.argv[2] || 'http://127.0.0.1:8731/';
 const levels = process.argv.slice(3).map(Number);
 
-const BOT = () => new Promise(done => {
+const BOT = (process_dodge) => new Promise(done => {
   const G = window.__game, log = [];
   const steer = wx => window.dispatchEvent(new PointerEvent('pointermove', { clientX: G.screenX(wx), clientY: 300, pointerType: 'mouse' }));
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   let last = -1;
   const tick = () => {
     const s = G.s, lv = window.__bridgeLevel(s.level + 1);
-    if (s.state !== 'play') return done({ level: s.level + 1, name: s.name, result: s.state, t: +s.t.toFixed(1), squad: s.N, weapon: s.weapon, finalHp: lv.final.hp, stars: lv.stars, hero: s.hero, kills: s.kills, log });
+    if (s.state !== 'play') return done({ level: s.level + 1, perks: s.perk && Object.entries(s.perk).filter(e => e[1]).map(e => e.join(':')).join(' '), wLv: s.wLv, name: s.name, result: s.state, t: +s.t.toFixed(1), squad: s.N, weapon: s.weapon, finalHp: lv.final.hp, stars: lv.stars, hero: s.hero, kills: s.kills, log });
+    if (s.perkOpen) { window.dispatchEvent(new KeyboardEvent('keydown', { key: String(1 + ((Math.random() * 3) | 0)) })); requestAnimationFrame(tick); return; }   // pick a random perk
     let tx, why;
     const trap = s.gates.find(g => (g.kind === '-' || g.kind === '/') && g.d > s.D - 1 && g.d < s.D + s.hd + 9);
     const saw = s.hazards.find(h => h.type === 'saw' && h.d > s.D - s.hd - 1 && h.d < s.D + s.hd + 3);
@@ -26,6 +27,8 @@ const BOT = () => new Promise(done => {
     else if (s.gates.length) { tx = 6; why = 'gates'; }
     else { const b = s.bosses.find(b => b.active && b.hp > 0) || s.bosses[0]; tx = b ? b.x : 0; why = 'boss'; }
     if (s.od >= 1 && s.odT <= 0 && s.bosses.some(b => b.active && b.d - s.D < 26)) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));   // fire overdrive at the boss
+    const rock = s.rocks.find(q => Math.abs(q.x - s.X) < q.r + s.hw * 0.5);   // step out of a boulder's red circle
+    if (rock && process_dodge) { tx = rock.x > s.X ? rock.x - rock.r - s.hw - 0.6 : rock.x + rock.r + s.hw + 0.6; why = 'dodge rock'; }
     steer(tx);
     const sec = Math.floor(s.t);
     if (sec !== last && sec % 3 === 0) { last = sec; log.push(`${sec}s ${why} ${s.weapon} N=${s.N} cage=${Math.max(0, Math.round(s.cageHp))} bosses=${s.bosses.map(b => b.kind + ':' + Math.round(b.hp)).join(',')}`); }
@@ -43,7 +46,7 @@ const count = await (async () => { await page.goto(base); await page.waitForFunc
 for (const n of levels.length ? levels : Array.from({ length: count }, (_, i) => i + 1)) {
   await page.goto(base + '?level=' + n);
   await page.waitForFunction(() => window.__game && document.getElementById('load').classList.contains('done'), null, { timeout: 60000 });
-  const r = await page.evaluate(BOT);
+  const r = await page.evaluate(BOT, !process.env.NODODGE);
   console.log(JSON.stringify(r, null, 1));
 }
 if (warnings.length) console.log('console warnings:\n' + [...new Set(warnings)].join('\n'));

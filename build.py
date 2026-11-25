@@ -144,9 +144,12 @@ function shootGate(g, dmg, x) { // every `step` damage raises the gate by one; a
   if (thr('gateUp', 60)) tone('square', 640 + g.sv * 30, 900 + g.sv * 30, 0.05, 0.03);
 }
 function setWeapon(name) {
-  wName = WEAPONS[name] ? name : 'laser'; W = WEAPONS[wName];
+  const nm = WEAPONS[name] ? name : 'laser', up = nm === wName && nm !== 'rifle';   // the same gun again levels it up
+  wLv = up ? Math.min(3, wLv + 1) : 1; wName = nm; W = WEAPONS[wName];
   atk = wName !== 'rifle'; setSoldierLook(wName === 'freeze' ? 2 : atk ? 1 : 0);
-  popup(W.label, clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);
+  popup(up ? 'LV' + wLv + '!' : W.label, clamp(X, -2, 2), 3.4, D + 2, '#ffe23a', '#3a1d00', 2.7, 1.6, 1.4);
+  if (up) { ring(X, D, 0.5, 8, 0.55, 0xffe14a); shake = Math.max(shake, 0.3); }
+  refreshWeaponGates();
 }
 function loseNearest(k, x, d) { // the k soldiers closest to (x, d) die
   for (let n = 0; n < k && N > 0; n++) { let best = 0, bd = 1e9; for (let i = 0; i < N; i++) { const q = Math.abs(sX[i] - x) + Math.abs(sD[i] - d); if (q < bd) { bd = q; best = i; } } killSoldier(best); }
@@ -390,10 +393,12 @@ function generateLevel(n, seed) {
   const at = f => { for (let tries = 0; tries < 8; tries++) { const s = slots[Math.min(slots.length - 1, Math.floor(slots.length * f) + tries)]; if (s && !s.op && !s.weapon && !s.buff) return s; } return {}; };
   if (n >= 2) Object.assign(at(0.42 + R() * 0.1), { op: 'x', val: 2 });
   if ((n >= 8 && R() < 0.6) || A === 'swarm') Object.assign(at(0.7 + R() * 0.08), { op: 'x', val: 2 });
-  const weaponGates = n < 3 ? 0 : A === 'arsenal' ? 3 : 1;
+  const weaponGates = n < 3 ? 0 : A === 'arsenal' ? 3 : 1; let prevW = cage.weapon;
   for (let i = 0; i < weaponGates; i++) { // the last weapon gate is the one you fight the boss with, so never freeze or flame
     const pool = (i === weaponGates - 1 ? finisher : unlocked).filter(w => w !== cage.weapon);
     const s = at((0.3 + 0.55 * (i + 1) / weaponGates) - 0.05 + R() * 0.05); delete s.op; s.val = 1; s.weapon = pick(pool.length ? pool : ['laser']);
+    if (i === weaponGates - 1 && n >= 5 && (n * 7) % 5 < 2 && finisher.includes(prevW)) s.weapon = prevW;   // some levels offer a level-up gate for the gun you have
+    prevW = s.weapon;
   }
   if (n >= 3) { // traps go in after the weapon gates and never right next to one, so dodging a trap can't cost you a weapon
     const traps = Math.min(4, 1 + Math.floor(n / 6)) + (A === 'saws' ? 1 : 0);
@@ -417,7 +422,7 @@ function generateLevel(n, seed) {
   // expected squad if every gate is taken (traps included); sizes traps, the boss and the stars
   let ex = 1, wpn = cage.weapon, frenzyLate = false;
   for (const s of slots) {
-    if (s.weapon) { wpn = s.weapon; continue; }
+    if (s.weapon) { if (s.weapon === wpn) dpsMul *= 1.15; wpn = s.weapon; continue; }   // a level-up gate (counted at half, as the cage can be missed)
     if (s.mystery) continue;
     if (s.buff) { if (s.buff === 'frenzy' && s.t > bigT - 4) frenzyLate = true; continue; }
     if (s.op === '-') s.val = Math.max(2, Math.round(ex * (0.12 + 0.13 * k)));   // a trap costs a share of the squad you should have by then
@@ -560,7 +565,7 @@ kitUI();
 """
 
 APPLY_LEVEL = r"""function applyLevel() {
-  L = getLevel(LI); eTy.fill(0); eSlow.fill(0); frenzyT = shieldT = 0;
+  L = getLevel(LI); eTy.fill(0); eSlow.fill(0); frenzyT = shieldT = 0; wLv = 1; perkReset(); clearRocks();
   if (LV !== 1) { applyFlood(); return; }   // the original's stage 2: Flood Rescue levels
   CAGE_X = L.cage.x; CAGE_D = L.cage.d; CAGE_HP = Math.max(5, Math.round(L.cage.hp * (1 - SAVE.up.cage * 0.08)));
   cage.group.position.set(CAGE_X, 0, -CAGE_D);
@@ -595,7 +600,7 @@ HORDE_NEW = """  // horde: one grid of enemies per rectangle, leaving room aroun
   // gates on the belt: a gate with arrival time t starts at distance REL*t and meets the squad front at t seconds
   gates.length = 0;
   for (const g of L.gates) for (let j = 0; j < g.count; j++) gates.push(makeGate(g, g.t + g.every * j));
-  gates.sort((a, b) => a.d - b.d);
+  gates.sort((a, b) => a.d - b.d); refreshWeaponGates();
 """
 
 # ================================================================== Flood Rescue levels
@@ -675,6 +680,141 @@ function floodLevels() {
   kitPanel('<h3>FLOOD RESCUE</h3><div class="kgrid">' + cells.join('') + '</div>');
 }
 """
+
+# ================================================================== run mechanics: perk draft, weapon levels, boss boulders
+MECH = r"""
+// ---- perks: beat a mid-boss and the game pauses on three cards; pick one for the rest of the level (m: 1 bridge, 2 flood, 3 both)
+const PERKS = [
+  { id: 'crit',  name: 'CRITICAL HITS',  short: 'CRIT',    m: 3, max: 3, desc: () => '+15% chance a shot deals triple damage' },
+  { id: 'giant', name: 'GIANT SLAYER',   short: 'SLAYER',  m: 3, max: 3, desc: () => '+35% damage to bosses' },
+  { id: 'rate',  name: 'QUICK HANDS',    short: 'HANDS',   m: 3, max: 3, desc: () => '+20% fire rate' },
+  { id: 'medic', name: 'FIELD MEDIC',    short: 'MEDIC',   m: 3, max: 3, desc: () => 'A new soldier joins every ' + (LV === 1 ? 2 : 4) + ' seconds' },
+  { id: 'reinf', name: 'REINFORCEMENTS', short: 'REINF',   m: 3, max: 5, desc: () => '+' + (LV === 1 ? 12 : 4) + ' soldiers right now' },
+  { id: 'skin',  name: 'IRON SKIN',      short: 'SKIN',    m: 3, max: 2, desc: () => '1 in 3 hits on a soldier misses' },
+  { id: 'od',    name: 'OVERCHARGE',     short: 'CHARGE',  m: 3, max: 2, desc: () => 'Overdrive charges twice as fast' },
+  { id: 'boom',  name: 'CHAIN REACTION', short: 'BOOM',    m: 3, max: 3, desc: () => 'Some kills explode and hit the horde' },
+  { id: 'gate',  name: 'GATE BOOST',     short: 'GATES',   m: 1, max: 3, desc: () => 'Blue + gates give 1 more soldier' },
+  { id: 'feet',  name: 'QUICK FEET',     short: 'FEET',    m: 1, max: 2, desc: () => 'Boss boulders hit a smaller area' },
+  { id: 'gate2', name: 'GATE BREAKER',   short: 'BREAKER', m: 2, max: 2, desc: () => 'Red gates count up twice as fast' },
+];
+const perk = {}; let perkOpen = false, perkQ = 0, perkAt = 0, perkN = 0, perkOpts = [], medT = 0, perkShown = '';
+function perkReset() { for (const p of PERKS) perk[p.id] = 0; perkOpen = false; perkQ = perkAt = perkN = medT = 0; perkOpts = []; $('perk').classList.remove('show'); perkHud(); }
+function openPerk() {
+  const pool = PERKS.filter(p => (p.m & LV) && perk[p.id] < p.max);
+  perkOpts = []; while (perkOpts.length < 3 && pool.length) perkOpts.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+  if (!perkOpts.length) return;
+  perkOpen = true; keyL = keyR = false; dragId = null;
+  $('perkc').innerHTML = perkOpts.map((p, i) => '<button class="pc" data-p="' + i + '"><em>' + (i + 1) + '</em><b>' + p.name + '</b><span>' + p.desc() + '</span><u>' + (perk[p.id] ? 'LEVEL ' + (perk[p.id] + 1) : 'NEW') + '</u></button>').join('');
+  $('perk').classList.add('show'); if (thr('perk', 200)) { tone('triangle', 660, 990, 0.12, 0.1); tone('triangle', 990, 1320, 0.14, 0.08, 0.1); }
+}
+function pickPerk(i) {
+  const p = perkOpts[i]; if (!perkOpen || !p) return;
+  perkOpen = false; $('perk').classList.remove('show'); perk[p.id]++; perkN++;
+  if (p.id === 'rate') rateMul /= 1.2;
+  if (p.id === 'reinf') addSoldiers(LV === 1 ? 12 : 4, X, D, 1.0);
+  initAudio(); sfx.power(); fovK = 1;
+  popup(p.short + '!', clamp(X, -2, 2), 3.4, D + 2, '#ffe14a', '#3a1d00', 2.2, 1.4, 1.4); ring(X, D, 0.5, 7, 0.5, 0xffd040); burst(X, 0.8, D, 50, 9, 2.4, 2.0, 0.4, 1.1, 0.5, -4, 3);
+  perkHud();
+}
+function perkHud() { // the perks you hold, as chips under the overdrive meter
+  const html = (wLv > 1 ? '<i class="w">' + W.label.split(' ')[0] + ' LV' + wLv + '</i>' : '') + PERKS.filter(p => perk[p.id]).map(p => '<i>' + p.short + (perk[p.id] > 1 ? ' ×' + perk[p.id] : '') + '</i>').join('');
+  if (html !== perkShown) { perkShown = html; $('perks').innerHTML = html; }
+  $('perks').style.display = state === 'play' && html ? 'flex' : 'none';
+}
+document.addEventListener('click', e => { const t = e.target.closest('.pc'); if (t) pickPerk(+t.dataset.p); });
+function chainBoom(i) { ring(eX[i], eD[i], 0.3, 2.4, 0.3, 0xffa030); splash(eX[i], eD[i], 1.5, 3); }
+
+// ---- weapon levels: a weapon gate for the gun you already hold levels it up (LV2 +35% damage, LV3 +70% and 15% faster)
+const WLVM = [1, 1, 1.35, 1.7];
+let wLv = 1;
+function refreshWeaponGates() { for (const g of gates) if (g.kind === 'w' && g.alive) g.mesh = gateMeshFor(g.label, GATE_STYLE.w.edge, g.weapon === wName && wLv < 3 ? 'LEVEL UP' : 'WEAPON'); }
+
+// ---- boss boulders: on the way in, bosses lob rocks at the squad. A red circle marks where each will land: steer out of it.
+const rocks = [], rockGeo = new THREE.DodecahedronGeometry(0.62, 0), rockMat = std({ color: 0x8c8478, roughness: 0.92, metalness: 0.05, flatShading: true });
+const warnFill = new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), warnEdge = new THREE.RingGeometry(0.8, 1, 48).rotateX(-Math.PI / 2);
+for (let i = 0; i < 6; i++) {
+  const rk = new THREE.Mesh(rockGeo, rockMat); rk.castShadow = true; rk.visible = false; scene.add(rk);
+  const f = new THREE.Mesh(warnFill, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.12, 0.06), transparent: true, opacity: 0.4, depthWrite: false, depthTest: false, fog: false })); f.visible = false; f.renderOrder = 5; scene.add(f);
+  const e = new THREE.Mesh(warnEdge, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 0.35, 0.12), transparent: true, opacity: 1, depthWrite: false, depthTest: false, fog: false })); e.visible = false; e.renderOrder = 6;   // drawn over the squad so the warning is never hidden scene.add(e);
+  rocks.push({ on: false, rk, f, e, x: 0, d: 0, r: 2, t: 0, T: 1, sx: 0, sy: 0, sd: 0, cap: 8 });
+}
+function clearRocks() { for (const q of rocks) { q.on = false; q.rk.visible = q.f.visible = q.e.visible = false; } }
+function throwRock(b) {
+  const q = rocks.find(r => !r.on); if (!q) return;
+  q.on = true; q.t = 0; q.T = b.kind === 2 ? 1.3 : 1.15;
+  q.r = (b.kind === 2 ? 2.4 : 2.0) * (1 - 0.2 * perk.feet);
+  q.x = clamp(X + rand(-0.4, 0.4) * hw, -DECK_HW + 1, DECK_HW - 1); q.d = D + V_SQUAD * q.T + rand(-0.4, 0.4) * hd;
+  q.sx = b.x; q.sd = b.d - b.r * 0.4; q.sy = 3.4 * b.sc; q.cap = Math.max(6, Math.round(N * (b.kind === 2 ? 0.14 : 0.1)));   // a boulder can crush a tenth of the squad: worth dodging at any size
+  q.rk.visible = q.f.visible = q.e.visible = true; b.smashA = 0.8;
+  if (thr('throw', 150)) { noise(0.18, 0.08, 900, 200); tone('sawtooth', 200, 80, 0.25, 0.05); }
+}
+function rockImpact(q) {
+  q.on = false; q.rk.visible = q.f.visible = q.e.visible = false;
+  shake = Math.max(shake, 0.35); sfx.smash();
+  ring(q.x, q.d, 0.4, q.r + 0.7, 0.35, 0xffa060); burst(q.x, 0.5, q.d, 30, 9, 1.6, 1.5, 1.4, 1.2, 0.5, -10, 3);
+  gibs(q.x, 0.8, q.d, 12, 7, 0.16, [0x8c8478, 0x6a645a, 0xb0a898]);
+  const r2 = q.r * q.r;
+  for (let j = 0; j < E; j++) if (eHp[j] > 0 && (eX[j] - q.x) ** 2 + (eD[j] - q.d) ** 2 < r2) killEnemy(j, true);   // the horde gets flattened too
+  if (state !== 'play') return;
+  if (shieldT > 0) { popup('BLOCKED', q.x, 2.6, q.d, '#a8f4ff', '#003a50', 1.6, 0.6, 2); return; }
+  let k = 0;
+  for (let i = N - 1; i >= 0 && k < q.cap; i--) if ((sX[i] - q.x) ** 2 + (sD[i] - q.d) ** 2 < r2) { if (perk.skin && Math.random() < 0.33 * perk.skin) continue; killSoldier(i); k++; }
+  if (k) popup('−' + k, q.x, 2.6, q.d, '#ff8080', '#4a0000', 1.8, 0.7, 2.2);
+  else if (Math.abs(q.x - X) < q.r + hw + 1.5) popup('DODGED!', q.x, 2.4, q.d, '#d8ff80', '#1f4a00', 1.5, 0.6, 2);
+  if (N <= 0) loseMsg = 'Boulders flattened your squad.<br>Steer out of the red circles!';
+}
+function updateMech(dt) {
+  if (perkQ && !perkOpen && state === 'play' && time >= perkAt) { perkQ--; perkAt = time + 0.6; openPerk(); }
+  if (state === 'play' && perk.medic && N > 0) { medT -= dt; if (medT <= 0) { medT = (LV === 1 ? 2 : 4) / perk.medic; addSoldiers(1, X, D - 0.2, 0.6); if (thr('medic', 400)) ring(X, D, hw, hw + 1, 0.25, 0x7fffa0); } }
+  perkHud();
+  if (LV === 1 && state === 'play') for (const b of bosses) {
+    if (b.dead || !b.active || b.fall > 0 || b.roar > 0 || b.wind > 0 || b.contact) continue;
+    const gap = b.d - D - hd; if (gap < 5 || gap > 24) continue;
+    b.rockT = (b.rockT == null ? 1.0 : b.rockT) - dt;
+    if (b.rockT <= 0) { b.rockT = b.kind === 2 ? 2.2 : 2.8; throwRock(b); }
+  }
+  for (const q of rocks) {
+    if (!q.on) continue;
+    q.t += dt; const u = Math.min(1, q.t / q.T);
+    q.rk.position.set(lerp(q.sx, q.x, u), lerp(q.sy, 0.6, u) + Math.sin(u * Math.PI) * 5, -lerp(q.sd, q.d, u)); q.rk.rotation.x += dt * 7; q.rk.rotation.z += dt * 5;
+    q.f.position.set(q.x, 0.078, -q.d); q.f.scale.setScalar(q.r * (0.15 + 0.85 * u)); q.e.position.set(q.x, 0.082, -q.d); q.e.scale.setScalar(q.r); q.e.material.opacity = 0.6 + 0.4 * Math.abs(Math.sin(q.t * (8 + 10 * u))); q.f.material.opacity = 0.25 + 0.25 * u;
+    if (u >= 1) rockImpact(q);
+  }
+}
+"""
+
+MECH_CSS = r'''
+  #perk{position:absolute;inset:0;z-index:7;display:none;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(6,14,40,.35),rgba(4,10,32,.84));cursor:default}
+  #perk.show{display:flex}
+  #perk h3{margin:0 0 .25em;font-size:2.3em;letter-spacing:.05em;color:#ffe14a;text-shadow:0 .09em 0 #8a3d00,0 .2em .45em rgba(0,0,0,.55)}
+  #perk p{margin:0 0 .9em;font:700 .8em Arial,sans-serif;color:#d8e8ff;text-shadow:0 .1em .2em #000}
+  #perkc{display:flex;gap:.55em;width:94%;max-width:34em;justify-content:center}
+  .pc{flex:1;min-width:0;font:inherit;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.45em;padding:.75em .4em .7em;border-radius:1em;border:.16em solid #fff;background:linear-gradient(180deg,rgba(96,170,255,.97),rgba(24,66,180,.98));box-shadow:0 .26em 0 rgba(6,22,80,.95),0 .7em 1.2em rgba(0,0,0,.4),inset 0 .14em 0 rgba(255,255,255,.5);text-shadow:0 .08em 0 rgba(0,20,80,.8);animation:pcin .35s backwards;transition:transform .08s}
+  .pc:nth-child(2){animation-delay:.07s}.pc:nth-child(3){animation-delay:.14s}
+  .pc:hover{border-color:#ffe14a;box-shadow:0 0 0 .12em #ffe14a,0 .26em 0 rgba(6,22,80,.95),0 .7em 1.2em rgba(0,0,0,.4)}
+  .pc:active{transform:translateY(.12em)}
+  .pc em{font-style:normal;font-size:.72em;width:1.7em;height:1.7em;line-height:1.7em;border-radius:50%;background:rgba(4,12,40,.55);border:.1em solid rgba(255,255,255,.6)}
+  .pc b{font-size:.9em;line-height:1.1;letter-spacing:.03em;min-height:2.2em;display:flex;align-items:center}
+  .pc span{font:700 .66em/1.3 Arial,sans-serif;color:#e6f0ff;flex:1}
+  .pc u{text-decoration:none;font-size:.66em;letter-spacing:.08em;color:#ffe14a;text-shadow:0 .06em 0 #8a3d00}
+  @keyframes pcin{from{transform:translateY(1.4em) scale(.9);opacity:0}}
+  #perks{position:absolute;left:2%;top:10.4%;z-index:5;display:none;flex-wrap:wrap;gap:.3em;max-width:62%;pointer-events:none}
+  #perks i{font-style:normal;font-size:.6em;padding:.24em .6em;border-radius:.6em;background:linear-gradient(180deg,rgba(4,12,40,.85),rgba(14,30,80,.82));border:.12em solid rgba(255,255,255,.85);color:#ffe14a;letter-spacing:.05em;text-shadow:0 .08em 0 rgba(0,0,0,.6)}
+  #perks i.w{color:#b8ffcf}
+  body.clean #perks{display:none!important}
+'''
+
+MECH_PATCHES = [
+    # mid-boss KO -> a perk draft a second later (at most three a level)
+    ("function killBoss(b) {", "function killBoss(b) {\n  if (!b.dead && b.kind !== 2 && state === 'play' && perkN + perkQ < 3) { perkQ++; perkAt = Math.max(perkAt, time + 1.0); }", 1),
+    # the draft pauses the game
+    ("  let dt = rdt * timeScale;", "  if (perkOpen) rdt = 1e-4;\n  let dt = rdt * timeScale;", 1),
+    ("function hitBoss(b, dmg, x) {\n  b.hp -= dmg;", "function hitBoss(b, dmg, x) {\n  dmg *= 1 + 0.35 * perk.giant;\n  b.hp -= dmg;", 1),
+    ("    g.val++; g.pop = 1; sfx.tick(g.val);", "    g.val = Math.min(g.max, g.val + (perk.gate2 && Math.random() < 0.5 * perk.gate2 ? 2 : 1)); g.pop = 1; sfx.tick(g.val);", 1),
+    ("  if (k === 'a' || k === 'arrowleft') keyL = true;", "  if (perkOpen) { if (k >= '1' && k <= '3') pickPerk(+k - 1); return; }\n  if (k === 'a' || k === 'arrowleft') keyL = true;", 1),
+    ('<div id="unhide"></div>', '<div id="unhide"></div>\n  <div id="perks"></div><div id="perk"><h3>PICK A PERK</h3><p>Boss down! Keep one for the rest of the level.</p><div id="perkc"></div></div>', 1),
+    ("</style>", MECH_CSS + "</style>", 1),
+]
 
 FLOOD_PATCHES = [
     ("const TANK_X0 = -10.0, TANK_X1", "let TANK_X0 = -10.0, TANK_X1", 1),
@@ -761,7 +901,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- level data
     ("const CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", "let CAGE_X = -4.6, CAGE_D = 16.2, CAGE_HP = 30;", 1),
     ("let E = 0;\n", "let E = 0;\nconst eTy = new Uint8Array(MAXE), eSlow = new Float32Array(MAXE);\n", 1),
-    ("let crackT = 0;\n", "let crackT = 0;\n" + RUNTIME + FLOOD, 1),
+    ("let crackT = 0;\n", "let crackT = 0;\n" + RUNTIME + FLOOD + MECH, 1),
     ("function reset() {\n", APPLY_LEVEL, 1),
     (HORDE_OLD, HORDE_NEW, 1),
     ("bosses.length = 0; spawned1 = spawned2 = false;",
@@ -777,7 +917,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("if (!b.active) { if (LV === 1 ? D >= 29 : gt >= T_BOSS)", "if (!b.active) { if (LV === 1 ? D >= L.final.wakeAt : gt >= T_BOSS)", 1),
     ("clamp(LV === 1 ? D / 29 : gt / T_BOSS, 0, 1)", "clamp(LV === 1 ? D / L.final.wakeAt : gt / T_BOSS, 0, 1)", 1),
     ("$('hudL').textContent = 'STAGE ' + LV;", "{ const nm = LV === 1 ? L.name : F.name, h = $('hudL'); h.textContent = nm.split(' · ')[0]; h.className = h.textContent.length > 11 ? 'k2' : ''; }", 1),
-    ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt);", 1),
+    ("  if (play) gt += dt;", "  if (play) { gt += dt; }\n  updateHazards(dt); updateMech(dt);", 1),
     # ---- gates: any label, colour per kind, special effects
     ("c = g.val === 1 ? GLASS_B : GLASS_Y, gc = g.val === 1 ? GLOW_B : GLOW_Y", "c = g.glass, gc = g.glow", 1),
     ("    if (g.val === 1) mGateB.setMatrixAt(nb++, _gateM); else mGateY.setMatrixAt(ny++, _gateM);",
@@ -786,7 +926,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("  mGateB.count = nb; mGateY.count = ny; mGlassBack.count",
      "  mGateB.count = mGateY.count = 0; for (const m of gateMeshes.values()) m.instanceMatrix.needsUpdate = true; mGlassBack.count", 1),
     ("        if (g.val === 1) { addSoldiers(1, g.x + rand(-0.8, 0.8), g.d, 0.2);",
-     "        if (g.kind) gateSpecial(g);\n        else if (g.val < 10) { addSoldiers(g.val, g.x + rand(-0.8, 0.8), g.d, 0.2);", 1),
+     "        if (g.kind) gateSpecial(g);\n        else if (g.val < 10) { addSoldiers(g.val + perk.gate, g.x + rand(-0.8, 0.8), g.d, 0.2);", 1),
     ("popup('+1', g.x", "popup(g.label, g.x", 1),
     ("addSoldiers(99, g.x - 0.6", "addSoldiers(g.val, g.x - 0.6", 1),
     ("popup('+99'", "popup(g.label", 1),
@@ -803,7 +943,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "  if (ang && ux === 0) { const c = Math.cos(ang), s = Math.sin(ang), u = ux; ux = u * c + ud * s; ud = -u * s + ud * c; }   // fans out unless aimed\n"
      "  pX[P] = x; pD[P] = d; pS[P] = 0; pT[P] = type; pUX[P] = ux; pUD[P] = ud;", 1),
     ("sCd[i] += FIRE_T; sKick[i] = 1; fire(sX[i] + mzX, sD[i] + mzD, sType);",
-     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (frenzyT > 0 ? 0.5 : 1) * (odT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T * rateMul * (odT > 0 ? 0.5 : 1); fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
+     "sKick[i] = 1;\n        if (LV === 1) { sCd[i] += W.int * rateMul * (wLv >= 3 ? 0.85 : 1) * (frenzyT > 0 ? 0.5 : 1) * (odT > 0 ? 0.5 : 1); for (let k = 0; k < W.shots; k++) fire(sX[i] + mzX, sD[i] + mzD, W.type, (k - (W.shots - 1) / 2) * W.fan); }\n        else { sCd[i] += FIRE_T * rateMul * (odT > 0 ? 0.5 : 1); fire(sX[i] + mzX, sD[i] + mzD, sType); }", 1),
     ("const pw = (HEROT[ty] ? 0.55 : 0.42)", "const pw = PHW[ty]", 1),
     ("    if (!dead) for (const b of bosses) {",
      "    if (!dead && LV === 1) for (const g of gates) if (g.alive && g.shoot && g.sv < g.cap && d1 >= g.d - 0.35 && d0 <= g.d + 0.35 && Math.abs(x - g.x) < GATE_HW) { shootGate(g, dmg, x); dead = true; break; }\n"
@@ -827,13 +967,13 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     # ---- enemy types and status effects
     ("function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;",
      "function killEnemy(i, quiet) {\n  eHp[i] = 0; kills++;\n"
-     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off\n  if (eTy[i] === 4) { eTy[i] = 0; for (let k = 0; k < 2 && E < MAXE; k++, E++) { eX[E] = eX[i] + (k ? 0.4 : -0.4); eD[E] = eD[i] + rand(-0.2, 0.2); eHp[E] = 1; eTy[E] = 0; eSlow[E] = 0; eSt[E] = eSt[i]; ePh[E] = Math.random() * TAU; } burst(eX[i], 0.8, eD[i], 8, 5, 1.6, 0.5, 2.4, 0.7, 0.3, -5, 2); }   // splitters split\n  if (state === 'play' && odT <= 0) od = Math.min(1, od + 1 / 90);   // kills charge overdrive", 1),
+     "  if (eTy[i] === 3) { eTy[i] = 0; ring(eX[i], eD[i], 0.3, 2.6, 0.3, 0x80ff40); splash(eX[i], eD[i], 1.5, 3); }   // bombers go off\n  if (eTy[i] === 4) { eTy[i] = 0; for (let k = 0; k < 2 && E < MAXE; k++, E++) { eX[E] = eX[i] + (k ? 0.4 : -0.4); eD[E] = eD[i] + rand(-0.2, 0.2); eHp[E] = 1; eTy[E] = 0; eSlow[E] = 0; eSt[E] = eSt[i]; ePh[E] = Math.random() * TAU; } burst(eX[i], 0.8, eD[i], 8, 5, 1.6, 0.5, 2.4, 0.7, 0.3, -5, 2); }   // splitters split\n  if (state === 'play' && odT <= 0) od = Math.min(1, od + (1 + perk.od) / 90);   // kills charge overdrive\n  if (perk.boom && !quiet && Math.random() < 0.07 * perk.boom) chainBoom(i);", 1),
     ("if (eD[i] - front < 6 && Math.abs(eX[i] - X) < hw + 3.2) eSt[i] = 1;",
      "if (eD[i] - front < 6 + EAGG[eTy[i]] && Math.abs(eX[i] - X) < hw + 3.2 + EAGG[eTy[i]] * 0.5) eSt[i] = 1;", 1),
     ("st = CHARGE_V * dt;", "st = CHARGE_V * ESPD[eTy[i]] * (eSlow[i] > 0 ? (eSlow[i] -= dt, 0.35) : 1) * dt;", 1),
     ("if (best >= 0) { killSoldier(best); killEnemy(i, true); }",
      "if (best >= 0) {\n"
-     "      if (shieldT <= 0) { killSoldier(best); if (eTy[i] === 3) loseNearest(2, eX[i], eD[i]); }\n"
+     "      if (shieldT <= 0 && !(perk.skin && Math.random() < 0.33 * perk.skin)) { killSoldier(best); if (eTy[i] === 3) loseNearest(2, eX[i], eD[i]); }\n"
      "      if (eTy[i] === 1 && eHp[i] > 1) eHp[i] -= 1; else killEnemy(i, true);\n"
      "    }", 1),
     ("eSt[i] = eSt[E]; ePh[i] = ePh[E]; }", "eSt[i] = eSt[E]; ePh[i] = ePh[E]; eTy[i] = eTy[E]; eSlow[i] = eSlow[E]; }", 1),
@@ -847,7 +987,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      '<button id="ovm">STAGES</button>\n    <div id="kit"><div id="kitc"><i class="kcoin"></i><b id="coins">0</b></div><button class="kb" id="kLevels">LEVELS</button><button class="kb" id="kShop">UPGRADES</button><button class="kb" id="kDaily">DAILY</button><button class="kb" id="kShare">SHARE</button></div>\n    <div id="kitp"></div><div id="kitt"></div>', 1),
     ("</style>", KIT_CSS + "</style>", 1),
     ("if (e.target.closest('.ib') || e.target.id === 'unhide') return;",
-     "if (e.target.closest('.ib') || e.target.closest('#kit') || e.target.closest('#kitp') || e.target.id === 'unhide') return;", 1),
+     "if (e.target.closest('.ib') || e.target.closest('#kit') || e.target.closest('#kitp') || e.target.closest('#perk') || e.target.id === 'unhide') return;", 1),
     ("  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;", "  addSoldiers(1, X, 0, 0); sX[0] = X; sD[0] = 0;\n  if (LV === 1) kitApplyUpgrades(); else floodStart();", 1),
     ("saveBest(st);", "saveBest(st); const kitChip = kitWin(st);", 1),
     ("'</b></div></div>', LV === 1 ? 'NEXT STAGE' : 'PLAY AGAIN'", "'</b></div>' + kitChip + '</div>', LV === 1 ? 'NEXT STAGE' : 'NEXT FLOOD'", 1),
@@ -855,7 +995,7 @@ PATCHES = [  # (old, new, expected count) -- applied in order
     ("'RETRY');", "'RETRY'); }", 1),
     # ---- novel mechanics: overdrive button + damage, key
     ('<div id="unhide"></div>', '<div id="unhide"></div>\n  <button class="ib" id="bOD" title="Overdrive (F)"><span id="odF"></span><b id="odL">OVERDRIVE</b></button>', 1),
-    ("pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1);", "pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1) * (odT > 0 ? 1.5 : 1);", 1),
+    ("pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : 1);", "pDmg[P] = PDMG[type] * dmgMul * (HEROT[type] ? heroMul : WLVM[wLv]) * (odT > 0 ? 1.5 : 1) * (perk.crit && Math.random() < 0.15 * perk.crit ? 3 : 1);", 1),
     ("else if (k === 'q') {", "else if (k === 'f' || (k === ' ' && state === 'play')) overdrive();\n  else if (k === 'q') {", 1),
     # ---- endless progression + stars
     ("const st = LV === 1 ? (N >= 300 ? 3 : N >= 150 ? 2 : 1) : (N >= 15 ? 3 : N >= 9 ? 2 : 1)", "const st = LV === 1 ? (N >= L.stars[1] ? 3 : N >= L.stars[0] ? 2 : 1) : (N >= F.stars[1] ? 3 : N >= F.stars[0] ? 2 : 1)", 1),
@@ -864,13 +1004,14 @@ PATCHES = [  # (old, new, expected count) -- applied in order
      "function primary() { if (state === 'won') { if (LV === 1) LI = kitNext(); else FI++; } startGame(); }", 1),
     ("<b>THE BRIDGE</b><span>GATES &middot; CAGE &middot; LASERS</span>", "<b>THE BRIDGE</b><span>ENDLESS &middot; 9 WEAPONS</span>", 1),
     ("get s() { return { LV,",
-     "get s() { return { level: LI, flood: FI, fname: F && F.name, name: L.name, weapon: wName, frenzyT, shieldT, od, odT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
+     "get s() { return { perkOpen, perk: Object.assign({}, perk), wLv, rocks: rocks.filter(q => q.on).map(q => ({ x: q.x, d: q.d, r: q.r, t: q.t, T: q.T })), level: LI, flood: FI, fname: F && F.name, name: L.name, weapon: wName, frenzyT, shieldT, od, odT, hazards: hazards.map(h => ({ type: h.type, x: h.x, d: h.d, x0: h.x0, x1: h.x1, hp: h.hp })), LV,", 1),
     (".map(g => ({ d: g.d, val: g.val }))", ".map(g => ({ d: g.d, val: g.val, kind: g.kind, label: g.label }))", 1),
     # ---- levels.js loads before the game
     ("<script>\n(function(){\n  var fill=", "<script src=\"levels.js\"></script>\n<script>\n(function(){\n  var fill=", 1),
 ]
 
 PATCHES += FLOOD_PATCHES
+PATCHES += MECH_PATCHES
 
 for old, new, n in PATCHES:
     got = src.count(old)
