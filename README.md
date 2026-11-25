@@ -4,7 +4,7 @@
 
 **Play it:** https://thedjpetersen.com/games/bridge-squad/
 
-This kit turns [Bridge Squad](https://noclipepe.pages.dev/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**, in both of its modes. It also adds **weapons**, **gate types** and **enemy types**.
+This kit turns [Bridge Squad](https://noclipepe.com/bridge/), the one-level browser game by [@noclipepe](https://x.com/noclipepe), into a game with **any number of levels**, in both of its modes. It also adds **weapons**, **gate types** and **enemy types**.
 
 ![Ten worlds: dusk, day, sunset, neon, toxic, desert, storm, aurora, dawn and frost](docs/themes.png)
 
